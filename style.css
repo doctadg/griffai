@@ -258,6 +258,21 @@ blockquote {
     font-size: 1.2rem;
     position: relative;
     z-index: 1;
+    font-weight: bold;
+    color: var(--secondary-color);
+    text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    transition: all 0.3s ease;
+}
+
+/* Animation for live data updates */
+@keyframes update-flash {
+    0% { color: var(--secondary-color); }
+    50% { color: var(--primary-color); }
+    100% { color: var(--secondary-color); }
+}
+
+.token-stat p.updating {
+    animation: update-flash 1s ease;
 }
 
 /* Roadmap Section */
@@ -320,6 +335,86 @@ blockquote {
 .roadmap-item:hover {
     transform: scale(1.05);
     background: rgba(255,255,255,0.1);
+}
+
+/* Talk to Peter Section */
+#talk-to-peter {
+    background: var(--accent-color);
+}
+
+.chat-container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 2rem;
+    background: rgba(255,255,255,0.05);
+    border-radius: 20px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+}
+
+#chat-form {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+#user-prompt {
+    flex: 1;
+    padding: 1rem 1.5rem;
+    border: none;
+    border-radius: 50px;
+    background: rgba(255,255,255,0.1);
+    color: var(--text-color);
+    font-size: 1.1rem;
+    transition: all 0.3s ease;
+}
+
+#user-prompt:focus {
+    outline: none;
+    background: rgba(255,255,255,0.15);
+    box-shadow: 0 0 0 2px var(--primary-color);
+}
+
+.chat-btn {
+    padding: 1rem 2rem;
+    border: none;
+    border-radius: 50px;
+    background: var(--gradient-primary);
+    color: var(--background-color);
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.chat-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(255,107,107,0.5);
+}
+
+#response-container {
+    padding: 2rem;
+    background: rgba(255,255,255,0.05);
+    border-radius: 20px;
+    margin-top: 2rem;
+}
+
+#peter-response {
+    font-size: 1.1rem;
+    line-height: 1.6;
+    margin-bottom: 1rem;
+}
+
+#peter-voice {
+    width: 100%;
+    margin-top: 1rem;
+}
+
+#loading {
+    text-align: center;
+    font-style: italic;
+    color: var(--secondary-color);
+    padding: 1rem;
 }
 
 /* Community Section */

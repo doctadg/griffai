@@ -44,19 +44,19 @@
         </section>
 
         <section id="tokenomics">
-            <h2>Tokenomics (Gigglenomics)</h2>
+            <h2>Live Market Data</h2>
             <div class="tokenomics-grid">
                 <div class="token-stat">
-                    <h3>Total Supply</h3>
-                    <p>69,420,000,000 $GRIFF</p>
+                    <h3>Price</h3>
+                    <p id="token-price">Loading...</p>
                 </div>
                 <div class="token-stat">
-                    <h3>Initial Liquidity</h3>
-                    <p>20% Locked & Loaded</p>
+                    <h3>Market Cap</h3>
+                    <p id="market-cap">Loading...</p>
                 </div>
                 <div class="token-stat">
-                    <h3>Community Allocation</h3>
-                    <p>Giggity Giggity %</p>
+                    <h3>24h Volume</h3>
+                    <p id="volume-24h">Loading...</p>
                 </div>
             </div>
         </section>
@@ -75,6 +75,21 @@
                 <div class="roadmap-item">
                     <h3>Phase 3: ???</h3>
                     <p>Profit! (We learned this from Stewie)</p>
+                </div>
+            </div>
+        </section>
+
+        <section id="talk-to-peter">
+            <h2>Talk to Peter Griffin!</h2>
+            <div class="chat-container">
+                <form id="chat-form">
+                    <input type="text" id="user-prompt" placeholder="Say something to Peter..." required>
+                    <button type="submit" class="chat-btn">Send Message</button>
+                </form>
+                <div id="response-container">
+                    <p id="peter-response"></p>
+                    <audio id="peter-voice" controls style="display: none;"></audio>
+                    <div id="loading" style="display: none;">Hehehe, let me think about that...</div>
                 </div>
             </div>
         </section>
