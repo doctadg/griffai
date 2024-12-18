@@ -172,6 +172,34 @@ nav ul li a.nav-btn:hover {
     box-shadow: 0 30px 60px rgba(0,0,0,0.4);
 }
 
+.hero-buttons {
+    display: flex;
+    gap: 1rem;
+    margin-top: 2rem;
+}
+
+.hero-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.5rem 1.5rem;
+    border-radius: 50px;
+    text-decoration: none;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    transition: all 0.3s ease;
+    background: var(--gradient-primary);
+    color: var(--background-color);
+    box-shadow: 0 4px 12px rgba(255,107,107,0.3);
+    font-size: 0.9rem;
+}
+
+.hero-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(255,107,107,0.5);
+    color: var(--background-color);
+}
+
 /* About Section */
 #about {
     background: var(--accent-color);
