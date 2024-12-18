@@ -34,12 +34,18 @@
             </div>
         </section>
 
-        <section id="about">
-            <h2>What is Peter Griffain?</h2>
-            <div class="about-content">
-                <img src="peter2.jpg" alt="Peter Griffain Mascot" class="about-image">
-                <p>$GRIFF isn't just another memecoin - it's a revolution powered by the most chaotic dad in television history. Forget serious crypto, we're here to have fun!</p>
-                <blockquote>"Holy crap, I'm a cryptocurrency now!" - Peter Griffin</blockquote>
+        <section id="talk-to-peter">
+            <h2>Talk to Peter Griffin!</h2>
+            <div class="chat-container">
+                <form id="chat-form">
+                    <input type="text" id="user-prompt" placeholder="Say something to Peter..." required>
+                    <button type="submit" class="chat-btn">Send Message</button>
+                </form>
+                <div id="response-container">
+                    <p id="peter-response"></p>
+                    <audio id="peter-voice" controls style="display: none;"></audio>
+                    <div id="loading" style="display: none;">Hehehe, let me think about that...</div>
+                </div>
             </div>
         </section>
 
@@ -61,6 +67,15 @@
             </div>
         </section>
 
+        <section id="about">
+            <h2>What is Peter Griffain?</h2>
+            <div class="about-content">
+                <img src="peter2.jpg" alt="Peter Griffain Mascot" class="about-image">
+                <p>$GRIFF isn't just another memecoin - it's a revolution powered by the most chaotic dad in television history. Forget serious crypto, we're here to have fun!</p>
+                <blockquote>"Holy crap, I'm a cryptocurrency now!" - Peter Griffin</blockquote>
+            </div>
+        </section>
+
         <section id="roadmap">
             <h2>Our Totally Serious Roadmap</h2>
             <div class="roadmap-timeline">
@@ -75,21 +90,6 @@
                 <div class="roadmap-item">
                     <h3>Phase 3: ???</h3>
                     <p>Profit! (We learned this from Stewie)</p>
-                </div>
-            </div>
-        </section>
-
-        <section id="talk-to-peter">
-            <h2>Talk to Peter Griffin!</h2>
-            <div class="chat-container">
-                <form id="chat-form">
-                    <input type="text" id="user-prompt" placeholder="Say something to Peter..." required>
-                    <button type="submit" class="chat-btn">Send Message</button>
-                </form>
-                <div id="response-container">
-                    <p id="peter-response"></p>
-                    <audio id="peter-voice" controls style="display: none;"></audio>
-                    <div id="loading" style="display: none;">Hehehe, let me think about that...</div>
                 </div>
             </div>
         </section>
