@@ -206,8 +206,25 @@ document.getElementById('chat-form').addEventListener('submit', async (e) => {
     }
 });
 
+// Mobile menu toggle
+const menuToggle = document.querySelector('.menu-toggle');
+const nav = document.querySelector('nav');
+
+menuToggle?.addEventListener('click', () => {
+    menuToggle.classList.toggle('active');
+    nav.classList.toggle('menu-open');
+});
+
+// Close menu when clicking a link
+document.querySelectorAll('nav ul li a').forEach(link => {
+    link.addEventListener('click', () => {
+        menuToggle.classList.remove('active');
+        nav.classList.remove('menu-open');
+    });
+});
+
 // Clear conversation button
-document.getElementById('clear-conversation').addEventListener('click', () => {
+document.getElementById('clear-conversation')?.addEventListener('click', () => {
     const conversationHistory = document.getElementById('conversation-history');
     conversationHistory.innerHTML = ''; // Clear conversation display
     conversationManager.clearHistory(); // Clear conversation history in memory

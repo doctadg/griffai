@@ -68,10 +68,37 @@ header {
 
 nav {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
+    flex-direction: column;
     padding: 1rem 5%;
     gap: 2rem;
+}
+
+.nav-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+}
+
+.menu-toggle {
+    display: none;
+    flex-direction: column;
+    justify-content: space-between;
+    width: 30px;
+    height: 21px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    z-index: 10;
+}
+
+.menu-toggle .bar {
+    width: 30px;
+    height: 3px;
+    background-color: var(--text-color);
+    border-radius: 3px;
+    transition: all 0.3s ease;
 }
 
 .logo {
@@ -657,22 +684,25 @@ footer p {
 
 @media (max-width: 768px) {
     body {
-        font-size: 14px; /* Slightly smaller base font size */
+        font-size: 14px;
     }
 
-    nav {
-        flex-direction: column;
-        padding: 1rem;
-        align-items: stretch;
-        gap: 1rem;
+    .menu-toggle {
+        display: flex;
     }
-    
+
     nav ul {
+        display: none;
         flex-direction: column;
         align-items: center;
         padding: 0;
         margin: 0;
         gap: 0.5rem;
+        width: 100%;
+    }
+
+    nav.menu-open ul {
+        display: flex;
     }
     
     nav ul li {
@@ -687,9 +717,26 @@ footer p {
     }
     
     nav a.nav-btn {
+        display: none;
+    }
+
+    nav.menu-open a.nav-btn {
+        display: flex;
         margin: 0;
         width: 100%;
         justify-content: center;
+    }
+
+    .menu-toggle.active .bar:nth-child(1) {
+        transform: translateY(9px) rotate(45deg);
+    }
+
+    .menu-toggle.active .bar:nth-child(2) {
+        opacity: 0;
+    }
+
+    .menu-toggle.active .bar:nth-child(3) {
+        transform: translateY(-9px) rotate(-45deg);
     }
     
     #hero {
