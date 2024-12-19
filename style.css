@@ -115,14 +115,30 @@ nav {
     cursor: pointer;
     padding: 0;
     z-index: 10;
+    position: relative;
 }
 
 .menu-toggle .bar {
+    display: block;
     width: 30px;
     height: 3px;
     background-color: var(--text-color);
     border-radius: 3px;
     transition: all 0.3s ease;
+    position: absolute;
+    left: 0;
+}
+
+.menu-toggle .bar:nth-child(1) {
+    top: 0;
+}
+
+.menu-toggle .bar:nth-child(2) {
+    top: 9px;
+}
+
+.menu-toggle .bar:nth-child(3) {
+    top: 18px;
 }
 
 /* Navigation */
@@ -796,7 +812,8 @@ footer p {
     }
 
     .menu-toggle.active .bar:nth-child(1) {
-        transform: translateY(9px) rotate(45deg);
+        transform: rotate(45deg);
+        top: 9px;
     }
 
     .menu-toggle.active .bar:nth-child(2) {
@@ -804,7 +821,8 @@ footer p {
     }
 
     .menu-toggle.active .bar:nth-child(3) {
-        transform: translateY(-9px) rotate(-45deg);
+        transform: rotate(-45deg);
+        top: 9px;
     }
 
     #talk-to-peter {
