@@ -1,11 +1,11 @@
 /* Modern Memecoin Website Styling */
 :root {
-    /* Enhanced Color Palette */
-    --primary-color: #FF6B6B;
-    --secondary-color: #4ECDC4;
-    --background-color: #1A1A2E;
-    --text-color: #E2E2E2;
-    --accent-color: #16213E;
+    /* Peter Griffin Pants-Inspired Color Palette */
+    --primary-color: #4D5D53;  /* Dark olive green from Peter's pants */
+    --secondary-color: #2C3E33;  /* Darker variant of primary green */
+    --background-color: #000000;  /* Pure black background */
+    --text-color: #E2E2E2;  /* Light gray for readability */
+    --accent-color: #1C2B20;  /* Dark green accent */
     --gradient-primary: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
     --gradient-dark: linear-gradient(45deg, var(--background-color), var(--accent-color));
 }
@@ -56,9 +56,9 @@ header {
     left: 0;
     right: 0;
     z-index: 1000;
-    background: rgba(26, 26, 46, 0.95);
+    background: rgba(0, 0, 0, 0.95);
     backdrop-filter: blur(10px);
-    border-bottom: 1px solid rgba(255,255,255,0.1);
+    border-bottom: 1px solid rgba(77,93,83,0.2);
 }
 
 nav {
@@ -122,14 +122,14 @@ nav a.nav-btn {
     transition: all 0.3s ease;
     background: var(--gradient-primary);
     color: var(--background-color);
-    box-shadow: 0 6px 15px rgba(255,107,107,0.4);
+    box-shadow: 0 6px 15px rgba(77,93,83,0.4);
     font-size: 0.9rem;
     margin-left: 1rem;
 }
 
 nav a.nav-btn:hover {
     transform: translateY(-3px);
-    box-shadow: 0 8px 20px rgba(255,107,107,0.6);
+    box-shadow: 0 8px 20px rgba(77,93,83,0.6);
 }
 
 /* Hero Section */
@@ -200,13 +200,13 @@ nav a.nav-btn:hover {
     transition: all 0.3s ease;
     background: var(--gradient-primary);
     color: var(--background-color);
-    box-shadow: 0 4px 12px rgba(255,107,107,0.3);
+    box-shadow: 0 4px 12px rgba(77,93,83,0.3);
     font-size: 0.9rem;
 }
 
 .hero-btn:hover {
     transform: translateY(-2px);
-    box-shadow: 0 6px 16px rgba(255,107,107,0.5);
+    box-shadow: 0 6px 16px rgba(77,93,83,0.5);
     color: var(--background-color);
 }
 
@@ -427,7 +427,7 @@ blockquote {
 
 .chat-btn:hover {
     transform: translateY(-2px);
-    box-shadow: 0 6px 16px rgba(255,107,107,0.5);
+    box-shadow: 0 6px 16px rgba(77,93,83,0.5);
 }
 
 #response-container {
@@ -480,12 +480,12 @@ blockquote {
     transition: all 0.3s ease;
     background: var(--gradient-primary);
     color: var(--background-color);
-    box-shadow: 0 10px 20px rgba(255,107,107,0.4);
+    box-shadow: 0 10px 20px rgba(77,93,83,0.4);
 }
 
 .social-btn:hover {
     transform: translateY(-5px) scale(1.05);
-    box-shadow: 0 15px 30px rgba(255,107,107,0.6);
+    box-shadow: 0 15px 30px rgba(77,93,83,0.6);
 }
 
 /* Footer */
@@ -493,7 +493,7 @@ footer {
     background: var(--background-color);
     padding: 2rem 5%;
     text-align: center;
-    border-top: 1px solid rgba(255,255,255,0.1);
+    border-top: 1px solid rgba(77,93,83,0.2);
 }
 
 footer p {
