@@ -212,9 +212,9 @@ function initializeMobileMenu() {
     const nav = document.querySelector('nav');
 
     if (menuToggle && nav) {
-        // Remove existing event listeners
-        const newMenuToggle = menuToggle.cloneNode(true);
-        menuToggle.parentNode.replaceChild(newMenuToggle, menuToggle);
+        // Clear existing click listeners but keep the button
+        menuToggle.replaceWith(menuToggle.cloneNode(true));
+        const newMenuToggle = document.querySelector('.menu-toggle');
         
         // Add fresh event listener
         newMenuToggle.addEventListener('click', () => {
@@ -223,13 +223,9 @@ function initializeMobileMenu() {
         });
 
         // Close menu when clicking links
-        document.querySelectorAll('nav ul li a').forEach(link => {
-            // Remove existing event listeners
-            const newLink = link.cloneNode(true);
-            link.parentNode.replaceChild(newLink, link);
-            
-            // Add fresh event listener
-            newLink.addEventListener('click', () => {
+        const links = document.querySelectorAll('nav ul li a');
+        links.forEach(link => {
+            link.addEventListener('click', () => {
                 newMenuToggle.classList.remove('active');
                 nav.classList.remove('menu-open');
             });
