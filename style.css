@@ -827,7 +827,8 @@ footer p {
         padding: 0;
         border-right: none;
         border-bottom: 1px solid rgba(255,255,255,0.1);
-        background: transparent;
+        background: none;
+        backdrop-filter: none;
     }
 
     .chat-image-reduced {
