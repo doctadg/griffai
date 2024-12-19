@@ -68,16 +68,15 @@ header {
 
 nav {
     display: flex;
-    flex-direction: column;
+    justify-content: space-between;
+    align-items: center;
     padding: 1rem 5%;
     gap: 2rem;
 }
 
 .nav-header {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    width: 100%;
 }
 
 .menu-toggle {
@@ -689,6 +688,19 @@ footer p {
 
     .menu-toggle {
         display: flex;
+    }
+
+    nav {
+        flex-direction: column;
+        padding: 1rem;
+        align-items: stretch;
+    }
+
+    .nav-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        width: 100%;
     }
 
     nav ul {
