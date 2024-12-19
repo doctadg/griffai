@@ -275,6 +275,26 @@ nav a.nav-btn:hover {
     height: calc(100vh - 16rem);
 }
 
+.floating-peter {
+    position: absolute;
+    right: -200px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 10;
+    animation: float 4s ease-in-out infinite;
+}
+
+.floating-peter img {
+    width: 180px;
+    height: auto;
+    filter: drop-shadow(0 10px 20px rgba(0,0,0,0.3));
+    transition: transform 0.3s ease;
+}
+
+.floating-peter img:hover {
+    transform: scale(1.1) rotate(5deg);
+}
+
 .chat-sidebar {
     width: 250px;
     background: rgba(255,255,255,0.1);
@@ -700,6 +720,17 @@ footer p {
         flex-direction: column;
         height: calc(100vh - 10rem);
         margin: 0;
+    }
+
+    .floating-peter {
+        position: static;
+        transform: none;
+        margin: 1rem auto;
+        text-align: center;
+    }
+
+    .floating-peter img {
+        width: 120px;
     }
 
     .chat-sidebar {
