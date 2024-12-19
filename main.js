@@ -206,19 +206,14 @@ document.getElementById('chat-form').addEventListener('submit', async (e) => {
     }
 });
 
-// Mobile menu toggle initialization function
-function initializeMobileMenu() {
+// Mobile menu toggle
+document.addEventListener('DOMContentLoaded', () => {
     const menuToggle = document.querySelector('.menu-toggle');
     const nav = document.querySelector('nav');
 
     if (menuToggle && nav) {
-        // Clear existing click listeners but keep the button
-        menuToggle.replaceWith(menuToggle.cloneNode(true));
-        const newMenuToggle = document.querySelector('.menu-toggle');
-        
-        // Add fresh event listener
-        newMenuToggle.addEventListener('click', () => {
-            newMenuToggle.classList.toggle('active');
+        menuToggle.addEventListener('click', () => {
+            menuToggle.classList.toggle('active');
             nav.classList.toggle('menu-open');
         });
 
@@ -226,16 +221,12 @@ function initializeMobileMenu() {
         const links = document.querySelectorAll('nav ul li a');
         links.forEach(link => {
             link.addEventListener('click', () => {
-                newMenuToggle.classList.remove('active');
+                menuToggle.classList.remove('active');
                 nav.classList.remove('menu-open');
             });
         });
     }
-}
-
-// Initialize mobile menu on page load and immediately
-initializeMobileMenu();
-document.addEventListener('DOMContentLoaded', initializeMobileMenu);
+});
 
 // Clear conversation button
 document.getElementById('clear-conversation')?.addEventListener('click', () => {

@@ -131,14 +131,34 @@ nav {
 
 .menu-toggle .bar:nth-child(1) {
     top: 0;
+    transform-origin: top left;
 }
 
 .menu-toggle .bar:nth-child(2) {
     top: 9px;
+    transform-origin: center;
 }
 
 .menu-toggle .bar:nth-child(3) {
     top: 18px;
+    transform-origin: bottom left;
+}
+
+.menu-toggle.active .bar:nth-child(1) {
+    transform: rotate(45deg);
+    top: -1px;
+    left: 4px;
+}
+
+.menu-toggle.active .bar:nth-child(2) {
+    transform: scaleX(0);
+    opacity: 0;
+}
+
+.menu-toggle.active .bar:nth-child(3) {
+    transform: rotate(-45deg);
+    top: 19px;
+    left: 4px;
 }
 
 /* Navigation */
@@ -779,14 +799,32 @@ footer p {
         display: none;
         flex-direction: column;
         align-items: center;
-        padding: 0;
+        padding: 1rem 0;
         margin: 0;
-        gap: 0.5rem;
+        gap: 1rem;
         width: 100%;
+        background: rgba(0, 0, 0, 0.95);
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        border-top: 1px solid rgba(77,93,83,0.2);
     }
 
     nav.menu-open ul {
         display: flex;
+        animation: slideDown 0.3s ease-out forwards;
+    }
+
+    @keyframes slideDown {
+        from {
+            opacity: 0;
+            transform: translateY(-10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
     }
     
     nav ul li {
