@@ -71,13 +71,12 @@ nav {
     justify-content: space-between;
     align-items: center;
     padding: 1rem 5%;
-    flex-wrap: wrap;
+    gap: 2rem;
 }
 
 .logo {
     display: flex;
     align-items: center;
-    margin-bottom: 1rem;
 }
 
 .logo img {
@@ -105,8 +104,7 @@ nav ul {
     display: flex;
     list-style: none;
     gap: 2rem;
-    width: 100%;
-    justify-content: center;
+    justify-content: flex-start;
     flex-wrap: wrap;
 }
 
@@ -141,8 +139,7 @@ nav a.nav-btn {
     color: var(--background-color);
     box-shadow: 0 6px 15px rgba(77,93,83,0.4);
     font-size: 0.9rem;
-    margin-left: 1rem;
-    margin-top: 1rem;
+    margin-left: 2rem;
 }
 
 nav a.nav-btn:hover {
@@ -666,21 +663,33 @@ footer p {
     nav {
         flex-direction: column;
         padding: 1rem;
-        align-items: center;
-    }
-    
-    nav ul {
-        margin-top: 1rem;
-        flex-wrap: wrap;
-        justify-content: center;
-        padding: 0 1rem;
+        align-items: stretch;
         gap: 1rem;
     }
     
-    nav a.nav-btn {
-        margin-left: 0;
-        width: 100%; /* Full width button on mobile */
+    nav ul {
+        flex-direction: column;
+        align-items: center;
+        padding: 0;
+        margin: 0;
+        gap: 0.5rem;
+    }
+    
+    nav ul li {
+        width: 100%;
+        margin: 0;
         text-align: center;
+    }
+    
+    nav ul li a {
+        display: block;
+        padding: 0.75rem;
+    }
+    
+    nav a.nav-btn {
+        margin: 0;
+        width: 100%;
+        justify-content: center;
     }
     
     #hero {
