@@ -237,11 +237,9 @@ function initializeMobileMenu() {
     }
 }
 
-// Initialize mobile menu on page load
-document.addEventListener('DOMContentLoaded', initializeMobileMenu);
-
-// Initialize mobile menu immediately in case DOM is already loaded
+// Initialize mobile menu on page load and immediately
 initializeMobileMenu();
+document.addEventListener('DOMContentLoaded', initializeMobileMenu);
 
 // Clear conversation button
 document.getElementById('clear-conversation')?.addEventListener('click', () => {
