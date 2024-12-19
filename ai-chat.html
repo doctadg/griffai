@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Talk to Peter - Peter Griffain ($GRIFF)</title>
+    <link rel="icon" type="image/png" href="favicon.png">
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header>
+        <nav>
+            <div class="logo">
+                <img src="favicon.png" alt="Peter Griffain Logo">
+                <h1>$GRIFF</h1>
+            </div>
+            <ul>
+                <li><a href="index.html#talk-to-peter">Home</a></li>
+                <li><a href="index.html#tokenomics">Tokenomics</a></li>
+                <li><a href="index.html#about">About</a></li>
+                <li><a href="index.html#roadmap">Roadmap</a></li>
+                <li><a href="index.html#community">Community</a></li>
+            </ul>
+            <a href="https://dexscreener.com/solana/exh3v2ppzqy3qkqbag9nkavxjqrqe8fmjpbckgnpuqmf" target="_blank" class="nav-btn">Buy Now</a>
+        </nav>
+    </header>
+
+    <main>
+        <section id="talk-to-peter">
+            <h2>Talk to Peter Griffin!</h2>
+            <div class="chat-container">
+                <form id="chat-form">
+                    <input type="text" id="user-prompt" placeholder="Say something to Peter..." required>
+                    <button type="submit" class="chat-btn">Send Message</button>
+                </form>
+                <div id="response-container">
+                    <p id="peter-response"></p>
+                    <audio id="peter-voice" controls style="display: none;"></audio>
+                    <div id="loading" style="display: none;">Hehehe, let me think about that...</div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p>© 2024 Peter Griffain. Disclaimer: This is a meme token. Don't invest more than you can afford to lose. Not financial advice!</p>
+    </footer>
+
+    <script src="main.js"></script>
+</body>
+</html>
