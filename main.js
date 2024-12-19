@@ -206,22 +206,42 @@ document.getElementById('chat-form').addEventListener('submit', async (e) => {
     }
 });
 
-// Mobile menu toggle
-const menuToggle = document.querySelector('.menu-toggle');
-const nav = document.querySelector('nav');
+// Mobile menu toggle initialization function
+function initializeMobileMenu() {
+    const menuToggle = document.querySelector('.menu-toggle');
+    const nav = document.querySelector('nav');
 
-menuToggle?.addEventListener('click', () => {
-    menuToggle.classList.toggle('active');
-    nav.classList.toggle('menu-open');
-});
+    if (menuToggle && nav) {
+        // Remove existing event listeners
+        const newMenuToggle = menuToggle.cloneNode(true);
+        menuToggle.parentNode.replaceChild(newMenuToggle, menuToggle);
+        
+        // Add fresh event listener
+        newMenuToggle.addEventListener('click', () => {
+            newMenuToggle.classList.toggle('active');
+            nav.classList.toggle('menu-open');
+        });
 
-// Close menu when clicking a link
-document.querySelectorAll('nav ul li a').forEach(link => {
-    link.addEventListener('click', () => {
-        menuToggle.classList.remove('active');
-        nav.classList.remove('menu-open');
-    });
-});
+        // Close menu when clicking links
+        document.querySelectorAll('nav ul li a').forEach(link => {
+            // Remove existing event listeners
+            const newLink = link.cloneNode(true);
+            link.parentNode.replaceChild(newLink, link);
+            
+            // Add fresh event listener
+            newLink.addEventListener('click', () => {
+                newMenuToggle.classList.remove('active');
+                nav.classList.remove('menu-open');
+            });
+        });
+    }
+}
+
+// Initialize mobile menu on page load
+document.addEventListener('DOMContentLoaded', initializeMobileMenu);
+
+// Initialize mobile menu immediately in case DOM is already loaded
+initializeMobileMenu();
 
 // Clear conversation button
 document.getElementById('clear-conversation')?.addEventListener('click', () => {
