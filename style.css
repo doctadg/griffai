@@ -458,20 +458,21 @@ nav a.nav-btn:hover {
 }
 
 #response-container {
-    padding: 1.2rem;
+    padding: 0.75rem;
     margin: 0;
     background: rgba(255,255,255,0.07);
     border-top: 1px solid rgba(255,255,255,0.1);
-    display: flex;
-    flex-direction: column;
 }
 
 #peter-voice {
-    order: -1;  /* Move audio player to top */
-    margin-bottom: 1rem;
     width: 100%;
     border-radius: 12px;
     background: rgba(255,255,255,0.07);
+    height: 40px;
+}
+
+#peter-response {
+    display: none;
 }
 
 #loading {

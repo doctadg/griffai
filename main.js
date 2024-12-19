@@ -179,7 +179,6 @@ document.getElementById('chat-form').addEventListener('submit', async (e) => {
 
         // Get Peter's response
         const response = await getPeterResponse(promptInput.value);
-        responseText.textContent = response;
         
         // Add AI response to conversation display
         const aiMessageDiv = document.createElement('div');
@@ -192,6 +191,7 @@ document.getElementById('chat-form').addEventListener('submit', async (e) => {
         const audioUrl = await convertToSpeech(response);
         audioPlayer.src = audioUrl;
         audioPlayer.style.display = 'block';
+        responseText.textContent = ''; // Clear any previous text
         
         // Clear input
         promptInput.value = '';
