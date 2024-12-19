@@ -167,7 +167,7 @@ document.getElementById('chat-form').addEventListener('submit', async (e) => {
     submitButton.disabled = true;
     loadingDiv.style.display = 'block';
     responseText.textContent = '';
-    audioPlayer.style.display = 'none';
+    audioPlayer.style.display = '';
     
     try {
         // Add user message to conversation display
