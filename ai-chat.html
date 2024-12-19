@@ -28,19 +28,27 @@
 
     <main>
         <section id="talk-to-peter">
-            <h2>Talk to Peter Griffin!</h2>
-            <div class="chat-container">
-                <div class="chat-image">
-                    <img src="peter3.png" alt="Peter Griffin AI Chat" class="chat-image-reduced">
+            <h2>Chat with Peter Griffin!</h2>
+            <div class="chat-wrapper">
+                <div class="chat-sidebar">
+                    <div class="chat-image">
+                        <img src="peter3.png" alt="Peter Griffin AI Chat" class="chat-image-reduced">
+                    </div>
+                    <div class="chat-controls">
+                        <button id="clear-conversation" class="clear-btn">Clear Chat</button>
+                    </div>
                 </div>
-                <form id="chat-form">
-                    <input type="text" id="user-prompt" placeholder="Say something to Peter..." required>
-                    <button type="submit" class="chat-btn">Send Message</button>
-                </form>
-                <div id="response-container">
-                    <p id="peter-response"></p>
-                    <audio id="peter-voice" controls style="display: none;"></audio>
-                    <div id="loading" style="display: none;">Hehehe, let me think about that...</div>
+                <div class="chat-main">
+                    <div id="conversation-history" class="conversation-history"></div>
+                    <form id="chat-form" class="chat-input-area">
+                        <input type="text" id="user-prompt" placeholder="Say something to Peter..." required>
+                        <button type="submit" class="chat-btn">Send</button>
+                    </form>
+                    <div id="response-container">
+                        <div id="loading" style="display: none;">Hehehe, let me think about that...</div>
+                        <p id="peter-response"></p>
+                        <audio id="peter-voice" controls style="display: none;"></audio>
+                    </div>
                 </div>
             </div>
         </section>

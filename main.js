@@ -61,7 +61,51 @@ const OPENROUTER_API_KEY = 'sk-or-v1-0af97544defec2ccdd201f734fd4351c06aeed31942
 const ELEVENLABS_API_KEY = 'sk_ccc42e2272d0973465c00db6215ad8292a0924bc0347fd1d';
 const VOICE_ID = 's4CKenUVwyiAV9mUQ1C5';
 
+// Conversation history management
+class ConversationManager {
+    constructor() {
+        this.history = [];
+        this.maxHistoryLength = 10; // Limit conversation history to prevent token overflow
+    }
+
+    addUserMessage(message) {
+        this.history.push({ role: 'user', content: message });
+        this.trimHistory();
+    }
+
+    addAIMessage(message) {
+        this.history.push({ role: 'assistant', content: message });
+        this.trimHistory();
+    }
+
+    trimHistory() {
+        // Keep only the last maxHistoryLength messages
+        if (this.history.length > this.maxHistoryLength) {
+            this.history = this.history.slice(-this.maxHistoryLength);
+        }
+    }
+
+    getFullHistory() {
+        return [
+            {
+                role: 'system',
+                content: 'You are Peter Griffin from Family Guy. Respond in his characteristic style, using his mannerisms, catchphrases, and tendency to go off on tangents. Keep responses relatively short (2-3 sentences) and funny.'
+            },
+            ...this.history
+        ];
+    }
+
+    clearHistory() {
+        this.history = [];
+    }
+}
+
+const conversationManager = new ConversationManager();
+
 async function getPeterResponse(prompt) {
+    // Add user's message to conversation history
+    conversationManager.addUserMessage(prompt);
+
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -72,21 +116,17 @@ async function getPeterResponse(prompt) {
         },
         body: JSON.stringify({
             model: 'openai/gpt-4',
-            messages: [
-                {
-                    role: 'system',
-                    content: 'You are Peter Griffin from Family Guy. Respond in his characteristic style, using his mannerisms, catchphrases, and tendency to go off on tangents. Keep responses relatively short (2-3 sentences) and funny.'
-                },
-                {
-                    role: 'user',
-                    content: prompt
-                }
-            ]
+            messages: conversationManager.getFullHistory()
         })
     });
 
     const data = await response.json();
-    return data.choices[0].message.content;
+    const aiResponse = data.choices[0].message.content;
+    
+    // Add AI's response to conversation history
+    conversationManager.addAIMessage(aiResponse);
+
+    return aiResponse;
 }
 
 async function convertToSpeech(text) {
@@ -116,6 +156,7 @@ document.getElementById('chat-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     
     const promptInput = document.getElementById('user-prompt');
+    const conversationHistory = document.getElementById('conversation-history');
     const responseText = document.getElementById('peter-response');
     const audioPlayer = document.getElementById('peter-voice');
     const loadingDiv = document.getElementById('loading');
@@ -129,9 +170,23 @@ document.getElementById('chat-form').addEventListener('submit', async (e) => {
     audioPlayer.style.display = 'none';
     
     try {
+        // Add user message to conversation display
+        const userMessageDiv = document.createElement('div');
+        userMessageDiv.classList.add('user-message');
+        userMessageDiv.textContent = `You: ${promptInput.value}`;
+        conversationHistory.appendChild(userMessageDiv);
+        conversationHistory.scrollTop = conversationHistory.scrollHeight;
+
         // Get Peter's response
         const response = await getPeterResponse(promptInput.value);
         responseText.textContent = response;
+        
+        // Add AI response to conversation display
+        const aiMessageDiv = document.createElement('div');
+        aiMessageDiv.classList.add('ai-message');
+        aiMessageDiv.textContent = `Peter: ${response}`;
+        conversationHistory.appendChild(aiMessageDiv);
+        conversationHistory.scrollTop = conversationHistory.scrollHeight;
         
         // Convert to speech
         const audioUrl = await convertToSpeech(response);
@@ -149,4 +204,13 @@ document.getElementById('chat-form').addEventListener('submit', async (e) => {
         submitButton.disabled = false;
         loadingDiv.style.display = 'none';
     }
+});
+
+// Clear conversation button
+document.getElementById('clear-conversation').addEventListener('click', () => {
+    const conversationHistory = document.getElementById('conversation-history');
+    conversationHistory.innerHTML = ''; // Clear conversation display
+    conversationManager.clearHistory(); // Clear conversation history in memory
+    document.getElementById('peter-response').textContent = '';
+    document.getElementById('peter-voice').style.display = 'none';
 });
