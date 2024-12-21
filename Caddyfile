@@ -1,32 +1,3 @@
-{
-    # Trust Cloudflare headers
-    trusted_proxies static private_ranges cloudflare
-}
-
-:80, :443 {
-    root * /home/ubuntu/griffai/frontend
-    file_server
-
-    # Handle WebSocket connections
-    @websockets {
-        header Connection *Upgrade*
-        header Upgrade websocket
-    }
-    reverse_proxy @websockets localhost:3000
-
-    # Add security headers
-    header {
-        # Enable HSTS
-        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
-        # Disable FLoC tracking
-        Permissions-Policy "interest-cohort=()"
-        # Enable XSS filter
-        X-XSS-Protection "1; mode=block"
-        # Prevent clickjacking
-        X-Frame-Options "DENY"
-        # Prevent MIME type sniffing
-        X-Content-Type-Options "nosniff"
-        # Remove Server header
-        -Server
-    }
+venym.co {
+    reverse_proxy 127.0.0.1:3000
 }
