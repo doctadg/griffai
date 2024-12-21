@@ -6,6 +6,9 @@ const path = require('path');
 
 const app = express();
 
+// Serve static files from the frontend directory
+app.use(express.static(path.join(__dirname, '../frontend')));
+
 // Add CORS headers
 app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
@@ -207,7 +210,7 @@ process.on('unhandledRejection', (error) => {
 });
 
 // Start server
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 80;
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT} (0.0.0.0)`);
 });
