@@ -1,4 +1,5 @@
 venym.co {
     root * /home/ubuntu/griffai/frontend
     file_server
+    tls internal
 }
