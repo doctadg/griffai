@@ -1,8 +1,6 @@
 {
     # Trust Cloudflare headers
-    servers {
-        trusted_proxies cloudflare
-    }
+    trusted_proxies static private_ranges cloudflare
 }
 
 :80, :443 {
