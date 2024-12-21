@@ -3,7 +3,7 @@ const config = {
         wsUrl: `ws://${window.location.host}`
     },
     production: {
-        wsUrl: 'ws://18.192.211.91:3000'
+        wsUrl: 'ws://18.192.211.91:80'
     }
 };
 
