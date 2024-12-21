@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>$GRIFF - Solana Vanity Wallet Generator</title>
+    <link rel="icon" type="image/png" href="favicon.png">
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header>
+        <nav>
+            <div class="nav-header">
+                <div class="logo">
+                    <img src="favicon.png" alt="Peter Griffain Logo">
+                    <h1>$GRIFF</h1>
+                </div>
+                <button class="menu-toggle">
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                </button>
+            </div>
+            <ul>
+                <li><a href="index.html">Home</a></li>
+                <li><a href="ai-chat.html">Talk to Peter</a></li>
+                <li><a href="index.html#tokenomics">Tokenomics</a></li>
+                <li><a href="index.html#about">About</a></li>
+                <li><a href="index.html#roadmap">Roadmap</a></li>
+            </ul>
+            <a href="https://dexscreener.com/solana/exh3v2ppzqy3qkqbag9nkavxjqrqe8fmjpbckgnpuqmf" target="_blank" class="nav-btn">Buy Now</a>
+        </nav>
+    </header>
+
+    <main>
+        <section id="vanity-generator" style="min-height: 100vh; padding-top: 100px;">
+            <h2>Solana Vanity Wallet Generator</h2>
+            <div class="generator-container" style="max-width: 800px; margin: 0 auto; padding: 2rem; background: rgba(255,255,255,0.05); border-radius: 20px; box-shadow: 0 8px 32px rgba(0,0,0,0.3);">
+                <div class="input-group" style="margin-bottom: 2rem;">
+                    <label for="pattern" style="display: block; margin-bottom: 0.5rem;">Enter desired pattern (max 6 characters):</label>
+                    <input type="text" id="pattern" maxlength="6" style="width: 100%; padding: 1rem; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; color: var(--text-color); font-size: 1rem;">
+                    <p class="hint" style="margin-top: 0.5rem; opacity: 0.7; font-size: 0.9rem;">Pattern is case-sensitive. Generation time increases with pattern length.</p>
+                </div>
+
+                <div class="controls" style="display: flex; gap: 1rem; margin-bottom: 2rem;">
+                    <button id="generate" class="hero-btn" style="flex: 1;">Generate Address</button>
+                    <button id="stop" class="hero-btn" style="flex: 1; background: rgba(220,53,69,0.7);" disabled>Stop</button>
+                </div>
+
+                <div class="status" style="margin-bottom: 2rem;">
+                    <p id="attempts" style="margin-bottom: 0.5rem;">Attempts: 0</p>
+                    <p id="speed" style="margin-bottom: 0.5rem; font-size: 0.9rem;">Speed: 0 addresses/sec</p>
+                    <p id="estimate" style="margin-bottom: 1rem; font-size: 0.9rem;">Estimated time: calculating...</p>
+                    <div class="progress-container" style="width: 100%; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px;">
+                        <div id="progress" style="width: 0%; height: 100%; background: var(--primary-color); border-radius: 2px; transition: width 0.3s ease;"></div>
+                    </div>
+                </div>
+                <div id="status-message" style="margin-bottom: 2rem; padding: 1rem; background: rgba(255,255,255,0.07); border-radius: 10px; display: none;">
+                    <p style="margin: 0;"></p>
+                </div>
+
+                <div id="result" style="display: none; padding: 2rem; background: rgba(255,255,255,0.07); border-radius: 10px;">
+                    <h3 style="margin-bottom: 1rem;">Found Match!</h3>
+                    <div class="wallet-info" style="margin-bottom: 1rem;">
+                        <p><strong>Public Key:</strong> <span id="public-key"></span></p>
+                    </div>
+                    <button id="download-key" class="hero-btn">Download Private Key</button>
+                    <p style="margin-top: 1rem; font-size: 0.9rem; opacity: 0.7;">Private key will be downloaded as an encrypted file. Keep it safe!</p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p>© 2024 Peter GriffAIn $Griff</p>
+    </footer>
+
+    <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <script type="module" src="vanity-wallet.js"></script>
+</body>
+</html>
