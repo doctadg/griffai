@@ -311,33 +311,19 @@ function displayResult(result, attempts) {
 
 function downloadPrivateKey() {
     if (!currentKeypair) return;
-
-    // Generate a random salt for encryption
-    const salt = CryptoJS.lib.WordArray.random(128/8);
     
-    // Convert secret key to string
+    // Convert secret key to string for easy copying
     const secretKeyString = JSON.stringify(currentKeypair.secretKey);
     
-    // Encrypt the private key with a timestamp to prevent duplicates
-    const timestamp = new Date().getTime();
-    const encrypted = CryptoJS.AES.encrypt(
-        secretKeyString + '|' + timestamp,
-        salt.toString()
-    ).toString();
-
-    // Create the download content
-    const content = JSON.stringify({
-        encrypted,
-        salt: salt.toString(),
-        publicKey: currentKeypair.publicKey
-    });
+    // Create the download content - just the private key
+    const content = secretKeyString;
 
     // Create and trigger download
-    const blob = new Blob([content], { type: 'application/json' });
+    const blob = new Blob([content], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `solana-vanity-${currentKeypair.publicKey.slice(0, 8)}.json`;
+    a.download = `solana-private-key-${currentKeypair.publicKey.slice(0, 8)}.txt`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -346,7 +332,7 @@ function downloadPrivateKey() {
     // Clear the keypair from memory
     currentKeypair = null;
     resultEl.style.display = 'none';
-    showStatus('Private key downloaded and cleared from memory');
+    showStatus('Private key downloaded and cleared from memory. You can now import this key into your wallet.');
 }
 
 

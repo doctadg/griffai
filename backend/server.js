@@ -1,8 +1,10 @@
- const express = require('express');
+const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
 const { Keypair } = require('@solana/web3.js');
 const path = require('path');
+const { Worker } = require('worker_threads');
+const os = require('os');
 
 const app = express();
 
@@ -46,39 +48,112 @@ server.on('upgrade', (request, socket, head) => {
 // Store active generation tasks
 const activeTasks = new Map();
 
+// Create a worker pool
+const NUM_WORKERS = Math.max(1, os.cpus().length - 1); // Leave one core free for the main thread
+const workerPool = [];
+
 // WebSocket connection handling
 wss.on('connection', (ws) => {
     console.log('New WebSocket connection established');
     let isGenerating = false;
-    let attempts = 0;
+    let totalAttempts = 0;
     let lastProgressUpdate = 0;
+    let activeWorkers = [];
 
-    // Send progress updates every 100ms at most
-    const PROGRESS_UPDATE_INTERVAL = 100;
+    // Increase progress update interval to reduce overhead
+    const PROGRESS_UPDATE_INTERVAL = 250; // 250ms instead of 100ms
 
     const sendProgress = () => {
         const now = Date.now();
         if (now - lastProgressUpdate >= PROGRESS_UPDATE_INTERVAL) {
-            const progressMessage = {
+            ws.send(JSON.stringify({
                 type: 'progress',
-                attempts
-            };
-            console.log('Sending progress update:', progressMessage);
-            ws.send(JSON.stringify(progressMessage));
+                attempts: totalAttempts
+            }));
             lastProgressUpdate = now;
         }
     };
 
+    // Function to create a new worker
+    const createWorker = (pattern) => {
+        const worker = new Worker(`
+            const { parentPort } = require('worker_threads');
+            const { Keypair } = require('@solana/web3.js');
+
+            // Pre-compile pattern to regex for faster matching
+            const patternRegex = new RegExp('^' + '${pattern}', 'i');
+            
+            // Larger batch size for better performance
+            const BATCH_SIZE = 1000;
+
+            parentPort.on('message', ({ type }) => {
+                if (type === 'generate') {
+                    try {
+                        for (let i = 0; i < BATCH_SIZE; i++) {
+                            const keypair = Keypair.generate();
+                            const address = keypair.publicKey.toString();
+                            
+                            // Use regex test for faster matching
+                            if (patternRegex.test(address)) {
+                                parentPort.postMessage({
+                                    type: 'found',
+                                    result: {
+                                        publicKey: address,
+                                        secretKey: Array.from(keypair.secretKey)
+                                    }
+                                });
+                                return;
+                            }
+                        }
+                        // Report batch completion
+                        parentPort.postMessage({ type: 'batch', count: BATCH_SIZE });
+                    } catch (error) {
+                        parentPort.postMessage({ type: 'error', error: error.message });
+                    }
+                }
+            });
+        `, { eval: true });
+
+        worker.on('message', (message) => {
+            if (!isGenerating) return;
+
+            if (message.type === 'batch') {
+                totalAttempts += message.count;
+                sendProgress();
+                if (isGenerating) {
+                    worker.postMessage({ type: 'generate' });
+                }
+            } else if (message.type === 'found') {
+                isGenerating = false;
+                ws.send(JSON.stringify({
+                    type: 'found',
+                    result: message.result,
+                    attempts: totalAttempts
+                }));
+                stopWorkers();
+            } else if (message.type === 'error') {
+                console.error('Worker error:', message.error);
+            }
+        });
+
+        worker.on('error', (error) => {
+            console.error('Worker error:', error);
+        });
+
+        return worker;
+    };
+
+    const stopWorkers = () => {
+        activeWorkers.forEach(worker => worker.terminate());
+        activeWorkers = [];
+    };
+
     ws.on('message', (message) => {
-        console.log('Received message:', message.toString());
         try {
             const data = JSON.parse(message);
-            console.log('Parsed message data:', data);
 
             if (data.type === 'start') {
-                console.log('Start generation request received');
                 if (isGenerating) {
-                    console.log('Error: Generation already in progress');
                     ws.send(JSON.stringify({
                         type: 'error',
                         message: 'Generation already in progress'
@@ -87,7 +162,6 @@ wss.on('connection', (ws) => {
                 }
                 
                 if (!data.pattern || typeof data.pattern !== 'string' || data.pattern.length > 6) {
-                    console.log('Error: Invalid pattern:', data.pattern);
                     ws.send(JSON.stringify({
                         type: 'error',
                         message: 'Invalid pattern. Must be 1-6 characters.'
@@ -95,81 +169,22 @@ wss.on('connection', (ws) => {
                     return;
                 }
 
-                console.log('Starting generation with pattern:', data.pattern);
                 isGenerating = true;
-                attempts = 0;
+                totalAttempts = 0;
                 lastProgressUpdate = 0;
                 const pattern = data.pattern.toLowerCase();
-                
-                // Start generation in a separate thread
-                const generateAddress = () => {
-                    try {
-                        if (!isGenerating) {
-                            console.log('Generation stopped');
-                            return;
-                        }
 
-                        // Process addresses in small batches to prevent blocking
-                        const BATCH_SIZE = 100;
-                        console.log(`Processing batch of ${BATCH_SIZE} addresses`);
-                        
-                        for (let i = 0; i < BATCH_SIZE; i++) {
-                            attempts++;
-                            
-                            const keypair = Keypair.generate();
-                            const address = keypair.publicKey.toString();
-
-                            if (address.toLowerCase().startsWith(pattern)) {
-                                console.log('Found matching address:', address);
-                                const result = {
-                                    type: 'found',
-                                    result: {
-                                        publicKey: address,
-                                        secretKey: Array.from(keypair.secretKey)
-                                    },
-                                    attempts
-                                };
-                                ws.send(JSON.stringify(result));
-                                console.log('Sent result to client');
-                                isGenerating = false;
-                                return;
-                            }
-                        }
-
-                        // Send progress update
-                        sendProgress();
-
-                        // Continue generation in next tick
-                        if (isGenerating) {
-                            setImmediate(() => {
-                                try {
-                                    generateAddress();
-                                } catch (error) {
-                                    console.error('Error in generateAddress setImmediate:', error);
-                                    ws.send(JSON.stringify({
-                                        type: 'error',
-                                        message: 'Internal generation error'
-                                    }));
-                                    isGenerating = false;
-                                }
-                            });
-                        }
-                    } catch (error) {
-                        console.error('Error in generateAddress:', error);
-                        ws.send(JSON.stringify({
-                            type: 'error',
-                            message: 'Internal generation error'
-                        }));
-                        isGenerating = false;
-                    }
-                };
-
-                console.log('Starting address generation loop');
-                generateAddress();
+                // Start multiple workers
+                for (let i = 0; i < NUM_WORKERS; i++) {
+                    const worker = createWorker(pattern);
+                    activeWorkers.push(worker);
+                    worker.postMessage({ type: 'generate' });
+                }
             }
 
             if (data.type === 'stop') {
                 isGenerating = false;
+                stopWorkers();
             }
         } catch (error) {
             console.error('Error processing message:', error);
@@ -182,11 +197,13 @@ wss.on('connection', (ws) => {
 
     ws.on('close', () => {
         isGenerating = false;
+        stopWorkers();
     });
 
     ws.on('error', (error) => {
         console.error('WebSocket error:', error);
         isGenerating = false;
+        stopWorkers();
     });
 
     // Send initial connection success message
