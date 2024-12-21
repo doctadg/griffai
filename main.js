@@ -153,9 +153,18 @@ function initializeChatFunctionality() {
         // Check if the message contains a Solana contract address (base58 format, case sensitive)
         const solanaAddressMatch = prompt.match(/[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{32,44}/);
         
-        // Handle token detection separately from chat
+        // If there's a token address, fetch and show info before continuing chat
         if (solanaAddressMatch) {
-            fetchAndShowTokenInfo(solanaAddressMatch[0]);
+            try {
+                const tokenData = await new Promise((resolve) => {
+                    fetchAndShowTokenInfo(solanaAddressMatch[0], resolve);
+                });
+                
+                // Add token data to conversation context
+                conversationManager.addAIMessage(`I just looked up some info about ${tokenData.name} (${tokenData.symbol}). The price is $${tokenData.price}, market cap is $${tokenData.marketCap}, and it's got $${tokenData.liquidity} in liquidity. What would you like to know about it?`);
+            } catch (error) {
+                console.error('Error handling token info:', error);
+            }
         }
 
         const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -197,11 +206,12 @@ function initializeChatFunctionality() {
         return aiResponse || fallbackResponse;
     }
 
-    async function fetchAndShowTokenInfo(address) {
+    async function fetchAndShowTokenInfo(address, callback) {
         try {
             const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${address}`);
             if (!response.ok) {
                 console.error('DexScreener API error:', response.status);
+                if (callback) callback(null);
                 return;
             }
             
@@ -209,6 +219,7 @@ function initializeChatFunctionality() {
             
             if (!data || !data.pairs || data.pairs.length === 0) {
                 console.error('No token data found');
+                if (callback) callback(null);
                 return;
             }
             
@@ -224,13 +235,15 @@ function initializeChatFunctionality() {
                 createdAt: pair.pairCreatedAt ? new Date(parseInt(pair.pairCreatedAt)).toLocaleDateString() : 'Unknown'
             };
 
-            showTokenInfoPopup(tokenData);
+            showTokenInfoPopup(tokenData, () => {
+                if (callback) callback(tokenData);
+            });
         } catch (error) {
             console.error('Error fetching token data:', error);
         }
     }
 
-    function showTokenInfoPopup(tokenData) {
+    function showTokenInfoPopup(tokenData, callback) {
         // Create popup if it doesn't exist
         let popup = document.getElementById('token-info-popup');
         if (!popup) {
@@ -329,6 +342,7 @@ function initializeChatFunctionality() {
             const closeBtn = popup.querySelector('.close-popup');
             closeBtn.onclick = () => {
                 popup.style.display = 'none';
+                if (callback) callback();
             };
         }
 
