@@ -14,17 +14,33 @@ app.use((req, res, next) => {
     next();
 });
 
+// Serve static files from frontend directory
+app.use(express.static(path.join(__dirname, '../frontend')));
+
 const server = http.createServer(app);
 const wss = new WebSocket.Server({
-    server,
+    noServer: true,
     perMessageDeflate: false,
     clientTracking: true,
     backlog: 100
 });
 
-// Handle WebSocket headers for CORS
-wss.on('headers', (headers) => {
-    headers.push('Access-Control-Allow-Origin: *');
+// Handle upgrade event manually
+server.on('upgrade', (request, socket, head) => {
+    console.log('Received upgrade request');
+    
+    // Add CORS headers to upgrade response
+    const responseHeaders = [
+        'HTTP/1.1 101 Web Socket Protocol Handshake',
+        'Upgrade: WebSocket',
+        'Connection: Upgrade',
+        'Access-Control-Allow-Origin: *'
+    ];
+    
+    wss.handleUpgrade(request, socket, head, (ws) => {
+        console.log('WebSocket connection established');
+        wss.emit('connection', ws, request);
+    });
 });
 
 // Serve static files

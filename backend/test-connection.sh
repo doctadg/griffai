@@ -21,18 +21,20 @@ else
     exit 1
 fi
 
-# Test WebSocket connection using wscat
+# Test WebSocket connection using wscat with verbose output
 echo -n "Testing WebSocket connection... "
 
 # Create a temporary file for the wscat output
 TMPFILE=$(mktemp)
 
-# Run wscat and capture all output
-timeout 5 wscat -c "ws://$HOST:$PORT" > "$TMPFILE" 2>&1 &
+# Run wscat with verbose output
+timeout 5 wscat -c "ws://$HOST:$PORT" --verbose > "$TMPFILE" 2>&1 &
 WSCAT_PID=$!
 
-# Wait a moment for the connection
+# Wait a moment for the connection and show connection attempt details
 sleep 2
+echo "Connection attempt details:"
+cat "$TMPFILE"
 
 # Check if wscat is still running (meaning it connected successfully)
 if kill -0 $WSCAT_PID 2>/dev/null; then
