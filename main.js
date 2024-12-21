@@ -179,8 +179,14 @@ function initializeChatFunctionality() {
                 
                 const data = await response.json();
                 
-                if (!data.pairs || data.pairs.length === 0) {
+                if (!data || !data.pairs) {
                     const noTokenResponse = "Holy crap, I couldn't find that token! It's like that time I searched for my glasses while wearing them. Are you sure that's a real token address?";
+                    conversationManager.addAIMessage(noTokenResponse);
+                    return noTokenResponse;
+                }
+
+                if (data.pairs.length === 0) {
+                    const noTokenResponse = "Hehehe, looks like this token isn't listed yet! It's like that time I tried to find Meg at a party - nobody's seen it!";
                     conversationManager.addAIMessage(noTokenResponse);
                     return noTokenResponse;
                 }
@@ -189,11 +195,12 @@ function initializeChatFunctionality() {
                 const newTokenData = {
                     name: pair.baseToken.name || 'Unknown Token',
                     symbol: pair.baseToken.symbol || '???',
-                    price: pair.priceUsd || '0',
+                    price: parseFloat(pair.priceUsd || '0').toFixed(12),
                     liquidity: formatNumber(pair.liquidity?.usd || 0),
                     marketCap: formatNumber(pair.fdv || 0),
                     volume24h: formatNumber(pair.volume?.h24 || 0),
-                    createdAt: pair.pairCreatedAt ? new Date(pair.pairCreatedAt * 1000).toLocaleDateString() : 'Unknown'
+                    priceChange24h: (pair.priceChange?.h24 || 0).toFixed(2),
+                    createdAt: pair.pairCreatedAt ? new Date(parseInt(pair.pairCreatedAt)).toLocaleDateString() : 'Unknown'
                 };
                 conversationManager.setTokenData(newTokenData);
                 tokenData = newTokenData;
@@ -274,6 +281,8 @@ function initializeChatFunctionality() {
             e.preventDefault();
             
             const promptInput = document.getElementById('user-prompt');
+            if (!promptInput.value.trim()) return; // Don't process empty messages
+            
             const conversationHistory = document.getElementById('conversation-history');
             const responseText = document.getElementById('peter-response');
             const audioPlayer = document.getElementById('peter-voice');
