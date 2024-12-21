@@ -153,6 +153,8 @@ function initializeChatFunctionality() {
         // Check if the message contains a Solana contract address (base58 format, case sensitive)
         const solanaAddressMatch = prompt.match(/[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{32,44}/);
         
+        let tokenContext = '';
+        
         // If there's a token address, fetch and show info before continuing chat
         if (solanaAddressMatch) {
             try {
@@ -160,12 +162,19 @@ function initializeChatFunctionality() {
                     fetchAndShowTokenInfo(solanaAddressMatch[0], resolve);
                 });
                 
-                // Add token data to conversation context
-                conversationManager.addAIMessage(`I just looked up some info about ${tokenData.name} (${tokenData.symbol}). The price is $${tokenData.price}, market cap is $${tokenData.marketCap}, and it's got $${tokenData.liquidity} in liquidity. What would you like to know about it?`);
+                if (tokenData) {
+                    tokenContext = `The token ${tokenData.name} (${tokenData.symbol}) has a price of $${tokenData.price}, market cap of $${tokenData.marketCap}, liquidity of $${tokenData.liquidity}, 24h volume of $${tokenData.volume24h}, and 24h price change of ${tokenData.priceChange24h}%. It was launched on ${tokenData.createdAt}.`;
+                    // Add token context to conversation
+                    conversationManager.addAIMessage(`I just looked up that token! ${tokenContext}`);
+                }
             } catch (error) {
                 console.error('Error handling token info:', error);
             }
         }
+
+        // If we have token context, add it to the user's message
+        const userMessage = tokenContext ? `${prompt}\n\nContext: ${tokenContext}` : prompt;
+        conversationManager.history[conversationManager.history.length - 1].content = userMessage;
 
         const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
             method: 'POST',
