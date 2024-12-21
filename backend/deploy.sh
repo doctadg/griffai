@@ -6,6 +6,12 @@ npm install
 # Copy .env file to the system directory
 sudo cp ../.env /etc/vanity-wallet.env
 
+# Setup frontend directory
+sudo mkdir -p /home/ubuntu/griffai/frontend
+sudo cp -r ../frontend/* /home/ubuntu/griffai/frontend/
+sudo chown -R caddy:caddy /home/ubuntu/griffai/frontend
+sudo chmod -R 755 /home/ubuntu/griffai/frontend
+
 # Copy Caddyfile
 sudo cp ../Caddyfile /etc/caddy/Caddyfile
 sudo systemctl restart caddy
