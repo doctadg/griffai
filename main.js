@@ -263,38 +263,64 @@ function initializeChatFunctionality() {
                     top: 50%;
                     left: 50%;
                     transform: translate(-50%, -50%);
-                    background: #fff;
+                    background: var(--background-color);
                     padding: 25px;
                     border-radius: 15px;
-                    box-shadow: 0 5px 30px rgba(0,0,0,0.3);
+                    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
                     z-index: 9999;
                     max-width: 450px;
                     width: 90%;
-                    border: 2px solid #007bff;
+                    border: 1px solid var(--primary-color);
+                    backdrop-filter: blur(10px);
+                    color: var(--text-color);
                 }
                 #token-info-popup h3 {
                     margin: 0 0 20px 0;
-                    color: #007bff;
+                    color: var(--primary-color);
                     font-size: 1.4em;
                     text-align: center;
+                    text-shadow: 0 2px 4px rgba(0,0,0,0.2);
                 }
                 .popup-content {
                     position: relative;
+                    background: rgba(255,255,255,0.07);
+                    padding: 20px;
+                    border-radius: 12px;
+                    border: 1px solid rgba(255,255,255,0.1);
                 }
                 .close-popup {
                     position: absolute;
-                    top: -10px;
-                    right: -10px;
+                    top: -15px;
+                    right: -15px;
                     cursor: pointer;
                     font-size: 24px;
+                    color: var(--text-color);
+                    background: var(--primary-color);
+                    width: 30px;
+                    height: 30px;
+                    border-radius: 50%;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    line-height: 1;
+                    transition: all 0.3s ease;
+                }
+                .close-popup:hover {
+                    transform: scale(1.1);
+                    background: var(--secondary-color);
                 }
                 .token-info p {
-                    margin: 8px 0;
+                    margin: 12px 0;
                     font-size: 14px;
+                    padding: 8px;
+                    border-radius: 8px;
+                    background: rgba(255,255,255,0.03);
+                    border: 1px solid rgba(255,255,255,0.05);
                 }
                 .token-info strong {
                     display: inline-block;
-                    width: 100px;
+                    width: 120px;
+                    color: var(--primary-color);
                 }
             `;
             document.head.appendChild(style);
