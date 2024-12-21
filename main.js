@@ -33,18 +33,14 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // Market data functionality
-const TOKEN_ADDRESS = '71Rp8PcVyz3xah5m69roFjYyFri5wq9aRjpibUptHaE';
-
 function initializeMarketData() {
     async function fetchMarketData() {
         try {
-            const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${TOKEN_ADDRESS}`);
+            const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/71Rp8PcVyz3xah5m69roFjYyFri5wq9aRjpibUptHaE`);
             const data = await response.json();
             
-            // Get the first pair since it's the main one
-            const mainPair = data.pairs[0];
-            
-            if (mainPair) {
+            if (data.pairs && data.pairs.length > 0) {
+                const mainPair = data.pairs[0];
                 // Update price
                 const priceElement = document.getElementById('token-price');
                 priceElement.textContent = `$${parseFloat(mainPair.priceUsd).toFixed(12)}`;
@@ -143,29 +139,40 @@ function initializeChatFunctionality() {
     async function getPeterResponse(prompt) {
         conversationManager.addUserMessage(prompt);
 
-        // Check if the message contains a Solana contract address
-        const solanaAddressMatch = prompt.match(/[1-9A-HJ-NP-Za-km-z]{32,44}/);
+        // Check if the message contains a Solana contract address (base58 format, case sensitive)
+        const solanaAddressMatch = prompt.match(/[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{32,44}/);
         
         let tokenData = null;
         if (solanaAddressMatch) {
             try {
                 const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${solanaAddressMatch[0]}`);
+                if (!response.ok) {
+                    throw new Error(`DexScreener API error: ${response.status}`);
+                }
+                
                 const data = await response.json();
                 
-                if (data.pairs && data.pairs.length > 0) {
-                    const pair = data.pairs[0];
-                    tokenData = {
-                        name: pair.baseToken.name,
-                        symbol: pair.baseToken.symbol,
-                        price: pair.priceUsd,
-                        liquidity: formatNumber(pair.liquidity.usd),
-                        marketCap: formatNumber(pair.fdv),
-                        volume24h: formatNumber(pair.volume?.h24 || 0),
-                        createdAt: new Date(pair.pairCreatedAt * 1000).toLocaleDateString()
-                    };
+                if (!data.pairs || data.pairs.length === 0) {
+                    const noTokenResponse = "Holy crap, I couldn't find that token! It's like that time I searched for my glasses while wearing them. Are you sure that's a real token address?";
+                    conversationManager.addAIMessage(noTokenResponse);
+                    return noTokenResponse;
                 }
+                
+                const pair = data.pairs[0];
+                tokenData = {
+                    name: pair.baseToken.name || 'Unknown Token',
+                    symbol: pair.baseToken.symbol || '???',
+                    price: pair.priceUsd || '0',
+                    liquidity: formatNumber(pair.liquidity?.usd || 0),
+                    marketCap: formatNumber(pair.fdv || 0),
+                    volume24h: formatNumber(pair.volume?.h24 || 0),
+                    createdAt: pair.pairCreatedAt ? new Date(pair.pairCreatedAt * 1000).toLocaleDateString() : 'Unknown'
+                };
             } catch (error) {
                 console.error('DexScreener error:', error);
+                const errorResponse = "Hehehe, I had trouble reading that contract. It's like trying to read one of Brian's novels - way too complicated! Try asking me something else!";
+                conversationManager.addAIMessage(errorResponse);
+                return errorResponse;
             }
         }
 
@@ -182,7 +189,25 @@ function initializeChatFunctionality() {
                 messages: [{
                     role: 'system',
                     content: tokenData ?
-                        `You are Peter GriffAIn from Family Guy analyzing this token: Name: ${tokenData.name} (${tokenData.symbol}), Price: $${tokenData.price}, Market Cap: $${tokenData.marketCap}, Liquidity: $${tokenData.liquidity}, 24h Volume: $${tokenData.volume24h}, Created: ${tokenData.createdAt}. Use these traits: 1) Use catchphrases like "hehehe" and "holy crap"; 2) Reference Family Guy episodes; 3) Make pop culture comparisons; 4) Go off on tangents; 5) Compare metrics to everyday things you understand; 6) Point out any concerning metrics in your style; 7) Keep responses concise (2-3 sentences) and humorous; 8) Occasionally mention your own $GRIFF token.` :
+                        `You are Peter GriffAIn analyzing a Solana token. Here's what you know about it:
+                        Token: ${tokenData.name} (${tokenData.symbol})
+                        Current Price: $${tokenData.price}
+                        Market Cap: $${tokenData.marketCap}
+                        Liquidity: $${tokenData.liquidity}
+                        24h Volume: $${tokenData.volume24h}
+                        Launch Date: ${tokenData.createdAt}
+
+                        As Peter Griffin, analyze these metrics in your style:
+                        1) Use your catchphrases ("hehehe", "holy crap", etc.)
+                        2) Compare numbers to things you understand (e.g., "that market cap is bigger than my tab at The Drunken Clam!")
+                        3) Point out if anything looks suspicious (low liquidity, weird price, etc.) in your style
+                        4) Make relevant Family Guy references
+                        5) Go off on a brief tangent if something reminds you of a funny story
+                        6) Keep it concise (2-3 sentences) and entertaining
+                        7) If the token looks good, compare it positively to your $GRIFF token
+                        8) If the token looks suspicious, joke about it being shadier than one of your schemes
+
+                        Important: Focus on giving actual insights about the token while being funny!` :
                         'You are Peter GriffAIn from Family Guy. Use these traits: 1) Use catchphrases like "hehehe" and "holy crap"; 2) Reference Family Guy episodes; 3) Make pop culture comparisons; 4) Go off on tangents; 5) Mention Pawtucket Patriot beer; 6) Keep responses concise (2-3 sentences) and humorous; 7) Express confusion about complex topics; 8) Occasionally mention your own $GRIFF token with enthusiasm.'
                 }, ...conversationManager.history],
                 temperature: 0.9,
@@ -190,9 +215,27 @@ function initializeChatFunctionality() {
         });
 
         const data = await response.json();
-        const aiResponse = data.choices[0].message.content;
-        conversationManager.addAIMessage(aiResponse);
-        return aiResponse;
+        
+        // Check for valid response
+        if (!data.choices || !data.choices[0] || !data.choices[0].message || !data.choices[0].message.content) {
+            console.error('Invalid API response:', data);
+            const errorResponse = "Hehehe, my brain froze like that time I tried to understand what Stewie was saying. Let me try again!";
+            conversationManager.addAIMessage(errorResponse);
+            return errorResponse;
+        }
+
+        const aiResponse = data.choices[0].message.content.trim();
+        
+        // Don't save empty responses to history
+        if (aiResponse) {
+            conversationManager.addAIMessage(aiResponse);
+        } else {
+            const fallbackResponse = "Holy crap, my mind went blank like that time I forgot Meg's birthday... which is every year! Let me try again!";
+            conversationManager.addAIMessage(fallbackResponse);
+            return fallbackResponse;
+        }
+        
+        return aiResponse || fallbackResponse;
     }
 
     async function convertToSpeech(text) {
