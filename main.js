@@ -101,14 +101,9 @@ function initializeChatFunctionality() {
             constructor() {
                 this.history = [];
                 this.maxHistoryLength = 15;
-                this.tokenData = null;
             }
     
-            setTokenData(data) {
-                this.tokenData = data;
-            }
-
-        addUserMessage(message) {
+            addUserMessage(message) {
             this.history.push({ role: 'user', content: message });
             this.trimHistory();
         }
@@ -141,17 +136,6 @@ function initializeChatFunctionality() {
                 
                 Most importantly: Stay consistently in character as Peter Griffin, don't break character or explain your role.`
             };
-
-            if (this.tokenData) {
-                basePrompt.content += `\n\nAnalyzing token:
-                Name: ${this.tokenData.name} (${this.tokenData.symbol})
-                Price: $${this.tokenData.price}
-                Market Cap: $${this.tokenData.marketCap}
-                Liquidity: $${this.tokenData.liquidity}
-                24h Volume: $${this.tokenData.volume24h}
-                Launch Date: ${this.tokenData.createdAt}`;
-            }
-
             return [basePrompt, ...this.history];
         }
 
@@ -179,16 +163,8 @@ function initializeChatFunctionality() {
                 
                 const data = await response.json();
                 
-                if (!data || !data.pairs) {
-                    const noTokenResponse = "Holy crap, I couldn't find that token! It's like that time I searched for my glasses while wearing them. Are you sure that's a real token address?";
-                    conversationManager.addAIMessage(noTokenResponse);
-                    return noTokenResponse;
-                }
-
-                if (data.pairs.length === 0) {
-                    const noTokenResponse = "Hehehe, looks like this token isn't listed yet! It's like that time I tried to find Meg at a party - nobody's seen it!";
-                    conversationManager.addAIMessage(noTokenResponse);
-                    return noTokenResponse;
+                if (!data || !data.pairs || data.pairs.length === 0) {
+                    return null; // Return null instead of showing message in chat
                 }
                 
                 const pair = data.pairs[0];
@@ -202,8 +178,9 @@ function initializeChatFunctionality() {
                     priceChange24h: (pair.priceChange?.h24 || 0).toFixed(2),
                     createdAt: pair.pairCreatedAt ? new Date(parseInt(pair.pairCreatedAt)).toLocaleDateString() : 'Unknown'
                 };
-                conversationManager.setTokenData(newTokenData);
-                tokenData = newTokenData;
+
+                // Show token info popup
+                showTokenInfoPopup(newTokenData);
             } catch (error) {
                 console.error('DexScreener error:', error);
                 const errorResponse = "Hehehe, I had trouble reading that contract. It's like trying to read one of Brian's novels - way too complicated! Try asking me something else!";
@@ -249,6 +226,89 @@ function initializeChatFunctionality() {
         }
         
         return aiResponse || fallbackResponse;
+    }
+
+    function showTokenInfoPopup(tokenData) {
+        // Create popup if it doesn't exist
+        let popup = document.getElementById('token-info-popup');
+        if (!popup) {
+            popup = document.createElement('div');
+            popup.id = 'token-info-popup';
+            popup.innerHTML = `
+                <div class="popup-content">
+                    <span class="close-popup">&times;</span>
+                    <h3>Token Information</h3>
+                    <div class="token-info">
+                        <p><strong>Name:</strong> <span id="token-name"></span></p>
+                        <p><strong>Symbol:</strong> <span id="token-symbol"></span></p>
+                        <p><strong>Price:</strong> <span id="token-price"></span></p>
+                        <p><strong>Market Cap:</strong> <span id="token-mcap"></span></p>
+                        <p><strong>Liquidity:</strong> <span id="token-liquidity"></span></p>
+                        <p><strong>24h Volume:</strong> <span id="token-volume"></span></p>
+                        <p><strong>24h Change:</strong> <span id="token-change"></span></p>
+                        <p><strong>Launch Date:</strong> <span id="token-date"></span></p>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(popup);
+
+            // Add styles
+            const style = document.createElement('style');
+            style.textContent = `
+                #token-info-popup {
+                    display: none;
+                    position: fixed;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    background: #fff;
+                    padding: 20px;
+                    border-radius: 10px;
+                    box-shadow: 0 0 20px rgba(0,0,0,0.2);
+                    z-index: 1000;
+                    max-width: 400px;
+                    width: 90%;
+                }
+                .popup-content {
+                    position: relative;
+                }
+                .close-popup {
+                    position: absolute;
+                    top: -10px;
+                    right: -10px;
+                    cursor: pointer;
+                    font-size: 24px;
+                }
+                .token-info p {
+                    margin: 8px 0;
+                    font-size: 14px;
+                }
+                .token-info strong {
+                    display: inline-block;
+                    width: 100px;
+                }
+            `;
+            document.head.appendChild(style);
+
+            // Add close functionality
+            const closeBtn = popup.querySelector('.close-popup');
+            closeBtn.onclick = () => {
+                popup.style.display = 'none';
+            };
+        }
+
+        // Update popup content
+        popup.querySelector('#token-name').textContent = tokenData.name;
+        popup.querySelector('#token-symbol').textContent = tokenData.symbol;
+        popup.querySelector('#token-price').textContent = `$${tokenData.price}`;
+        popup.querySelector('#token-mcap').textContent = `$${tokenData.marketCap}`;
+        popup.querySelector('#token-liquidity').textContent = `$${tokenData.liquidity}`;
+        popup.querySelector('#token-volume').textContent = `$${tokenData.volume24h}`;
+        popup.querySelector('#token-change').textContent = `${tokenData.priceChange24h}%`;
+        popup.querySelector('#token-date').textContent = tokenData.createdAt;
+
+        // Show popup
+        popup.style.display = 'block';
     }
 
     async function convertToSpeech(text) {
