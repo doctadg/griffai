@@ -30,10 +30,10 @@ sudo chmod 600 /etc/vanity-wallet.env
 # Stop the service if it's already running
 sudo systemctl stop vanity-wallet
 
-# Check if port 80 is still in use
-if lsof -i :80 >/dev/null 2>&1; then
-    echo "Port 80 is still in use. Attempting to kill the process..."
-    sudo lsof -ti :80 | xargs sudo kill -9
+# Check if port 3000 is still in use
+if lsof -i :3000 >/dev/null 2>&1; then
+    echo "Port 3000 is still in use. Attempting to kill the process..."
+    sudo lsof -ti :3000 | xargs sudo kill -9
 fi
 
 # Reload systemd and restart service
