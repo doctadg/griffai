@@ -13,7 +13,6 @@ function connectWebSocket() {
         isConnected = true;
         generateBtn.disabled = false;
         showStatus('Connected to server');
-        setTimeout(hideStatus, 2000);
     };
     
     ws.onclose = function() {
@@ -42,6 +41,7 @@ function connectWebSocket() {
                 console.log('Progress update:', data.attempts, 'attempts');
                 updateStats(data.attempts);
                 progressEl.style.width = `${(data.attempts % 1000) / 10}%`;
+                showStatus(`Generating... ${data.attempts.toLocaleString()} attempts so far`);
             } else if (data.type === 'found') {
                 console.log('Found matching address:', data.result.publicKey);
                 currentKeypair = data.result;
@@ -203,12 +203,14 @@ function startGeneration() {
         generateBtn.disabled = true;
         stopBtn.disabled = false;
         attemptsEl.textContent = 'Attempts: 0';
+        speedEl.textContent = 'Speed: Calculating...';
+        estimateEl.textContent = 'Estimated time: Calculating...';
         progressEl.style.width = '0%';
         startTime = Date.now();
         lastUpdateTime = startTime;
         lastAttempts = 0;
         
-        showStatus(`Generating address with pattern: "${pattern}". This may take a while depending on the pattern length.`);
+        showStatus(`Starting generation for pattern "${pattern}"... Please wait for first attempt.`);
         console.log('Starting generation with pattern:', pattern);
 
         // Start generation

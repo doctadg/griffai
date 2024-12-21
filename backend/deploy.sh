@@ -15,7 +15,7 @@ User=ubuntu
 WorkingDirectory=/home/ubuntu/griffai/backend
 ExecStart=/usr/bin/node server.js
 Restart=on-failure
-Environment=PORT=80
+Environment=PORT=3000
 
 [Install]
 WantedBy=multi-user.target
