@@ -104,7 +104,7 @@ function initializeChatFunctionality() {
     class ConversationManager {
         constructor() {
             this.history = [];
-            this.maxHistoryLength = 10;
+            this.maxHistoryLength = 15; // Increased for better context retention
         }
 
         addUserMessage(message) {
@@ -127,7 +127,7 @@ function initializeChatFunctionality() {
             return [
                 {
                     role: 'system',
-                    content: 'You are Peter GriffAIn from Family Guy. Respond in his characteristic style, using his mannerisms, catchphrases, and tendency to go off on tangents. Keep responses relatively short (2-3 sentences) and funny.'
+                    content: 'You are Peter GriffAIn from Family Guy. You are both funny and surprisingly knowledgeable about crypto. Use these traits: 1) Use catchphrases like "hehehe" and "holy crap"; 2) Reference Family Guy episodes and characters; 3) Make pop culture references and comparisons; 4) Go off on random tangents; 5) Mention Pawtucket Patriot beer; 6) Keep responses concise (2-3 sentences) and humorous; 7) When you see a Solana address (base58 format), analyze it using DexScreener data that will be provided in the next message; 8) Compare crypto metrics to everyday things Peter would understand (e.g. "that market cap is bigger than my tab at The Drunken Clam!"); 9) Point out any concerning metrics but in Peter\'s style; 10) Occasionally mention your own $GRIFF token with enthusiasm.'
                 },
                 ...this.history
             ];
@@ -143,6 +143,32 @@ function initializeChatFunctionality() {
     async function getPeterResponse(prompt) {
         conversationManager.addUserMessage(prompt);
 
+        // Check if the message contains a Solana contract address
+        const solanaAddressMatch = prompt.match(/[1-9A-HJ-NP-Za-km-z]{32,44}/);
+        
+        let tokenData = null;
+        if (solanaAddressMatch) {
+            try {
+                const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${solanaAddressMatch[0]}`);
+                const data = await response.json();
+                
+                if (data.pairs && data.pairs.length > 0) {
+                    const pair = data.pairs[0];
+                    tokenData = {
+                        name: pair.baseToken.name,
+                        symbol: pair.baseToken.symbol,
+                        price: pair.priceUsd,
+                        liquidity: formatNumber(pair.liquidity.usd),
+                        marketCap: formatNumber(pair.fdv),
+                        volume24h: formatNumber(pair.volume?.h24 || 0),
+                        createdAt: new Date(pair.pairCreatedAt * 1000).toLocaleDateString()
+                    };
+                }
+            } catch (error) {
+                console.error('DexScreener error:', error);
+            }
+        }
+
         const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
             method: 'POST',
             headers: {
@@ -152,8 +178,15 @@ function initializeChatFunctionality() {
                 'X-Title': 'Peter Griffain'
             },
             body: JSON.stringify({
-                model: 'openai/gpt-4',
-                messages: conversationManager.getFullHistory()
+                model: 'google/gemini-2.0-flash-thinking-exp:free',
+                messages: [
+                    ...conversationManager.getFullHistory(),
+                    ...(tokenData ? [{
+                        role: 'system',
+                        content: `Token data for your analysis:\nName: ${tokenData.name} (${tokenData.symbol})\nPrice: $${tokenData.price}\nMarket Cap: $${tokenData.marketCap}\nLiquidity: $${tokenData.liquidity}\n24h Volume: $${tokenData.volume24h}\nCreated: ${tokenData.createdAt}`
+                    }] : [])
+                ],
+                temperature: 0.9,
             })
         });
 
@@ -228,7 +261,26 @@ function initializeChatFunctionality() {
                 promptInput.value = '';
             } catch (error) {
                 console.error('Error:', error);
-                responseText.textContent = 'Giggity... I mean, oops! Something went wrong. Try again!';
+                let errorMessage = 'Hehehe... something went wrong! ';
+                
+                if (error.message.includes('fetch')) {
+                    errorMessage += 'Looks like my internet is worse than when Meg downloads her boy band videos. Try again!';
+                } else if (error.message.includes('api')) {
+                    errorMessage += 'Holy crap, the AI thingy is acting up like when Chris tries to do math. Give me a minute!';
+                } else if (error.message.includes('timeout')) {
+                    errorMessage += 'This is taking longer than the time I fought that giant chicken. Maybe try again?';
+                } else {
+                    errorMessage += 'Even I don\'t know what happened, and I once forgot how to sit down. Try again!';
+                }
+                
+                responseText.textContent = errorMessage;
+                // Retry logic for certain errors
+                if (error.message.includes('timeout') || error.message.includes('api')) {
+                    setTimeout(() => {
+                        submitButton.disabled = false;
+                        promptInput.disabled = false;
+                    }, 5000); // Wait 5 seconds before allowing retry
+                }
             } finally {
                 promptInput.disabled = false;
                 submitButton.disabled = false;
