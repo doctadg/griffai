@@ -14,9 +14,6 @@ app.use((req, res, next) => {
     next();
 });
 
-// Serve static files from frontend directory
-app.use(express.static(path.join(__dirname, '../frontend')));
-
 const server = http.createServer(app);
 const wss = new WebSocket.Server({
     noServer: true,
@@ -42,9 +39,6 @@ server.on('upgrade', (request, socket, head) => {
         wss.emit('connection', ws, request);
     });
 });
-
-// Serve static files
-app.use(express.static(path.join(__dirname)));
 
 // Store active generation tasks
 const activeTasks = new Map();

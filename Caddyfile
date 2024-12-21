@@ -1,0 +1,10 @@
+:80 {
+    root * /home/ubuntu/griffai/frontend
+    file_server
+    
+    @websockets {
+        header Connection *Upgrade*
+        header Upgrade websocket
+    }
+    reverse_proxy @websockets localhost:3000
+}

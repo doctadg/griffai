@@ -1,9 +1,12 @@
+// Get the WebSocket protocol based on page protocol
+const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+
 const config = {
     development: {
-        wsUrl: `ws://${window.location.host}`
+        wsUrl: `${wsProtocol}//${window.location.host}`
     },
     production: {
-        wsUrl: 'ws://18.192.211.91:3000'
+        wsUrl: `${wsProtocol}//${window.location.hostname}`
     }
 };
 

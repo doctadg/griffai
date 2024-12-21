@@ -6,6 +6,10 @@ npm install
 # Copy .env file to the system directory
 sudo cp ../.env /etc/vanity-wallet.env
 
+# Copy Caddyfile
+sudo cp ../Caddyfile /etc/caddy/Caddyfile
+sudo systemctl restart caddy
+
 # Create systemd service file
 sudo tee /etc/systemd/system/vanity-wallet.service << EOF
 [Unit]
