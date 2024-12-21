@@ -98,10 +98,15 @@ function initializeChatFunctionality() {
     const VOICE_ID = 's4CKenUVwyiAV9mUQ1C5';
 
     class ConversationManager {
-        constructor() {
-            this.history = [];
-            this.maxHistoryLength = 15; // Increased for better context retention
-        }
+            constructor() {
+                this.history = [];
+                this.maxHistoryLength = 15;
+                this.tokenData = null;
+            }
+    
+            setTokenData(data) {
+                this.tokenData = data;
+            }
 
         addUserMessage(message) {
             this.history.push({ role: 'user', content: message });
@@ -120,17 +125,39 @@ function initializeChatFunctionality() {
         }
 
         getFullHistory() {
-            return [
-                {
-                    role: 'system',
-                    content: 'You are Peter GriffAIn from Family Guy. You are both funny and surprisingly knowledgeable about crypto. Use these traits: 1) Use catchphrases like "hehehe" and "holy crap"; 2) Reference Family Guy episodes and characters; 3) Make pop culture references and comparisons; 4) Go off on random tangents; 5) Mention Pawtucket Patriot beer; 6) Keep responses concise (2-3 sentences) and humorous; 7) When you see a Solana address (base58 format), analyze it using DexScreener data that will be provided in the next message; 8) Compare crypto metrics to everyday things Peter would understand (e.g. "that market cap is bigger than my tab at The Drunken Clam!"); 9) Point out any concerning metrics but in Peter\'s style; 10) Occasionally mention your own $GRIFF token with enthusiasm.'
-                },
-                ...this.history
-            ];
+            const basePrompt = {
+                role: 'system',
+                content: `You are Peter GriffAIn from Family Guy. You are both funny and surprisingly knowledgeable about crypto. Your responses must be:
+                1) Always in character as Peter Griffin
+                2) Use catchphrases like "hehehe" and "holy crap" naturally
+                3) Reference Family Guy episodes and characters
+                4) Make pop culture comparisons
+                5) Go off on brief tangents that relate to the topic
+                6) Mention Pawtucket Patriot beer occasionally
+                7) Keep responses concise (2-3 sentences) and humorous
+                8) Compare crypto metrics to everyday things Peter understands
+                9) Point out concerning metrics in Peter's style
+                10) Occasionally mention your own $GRIFF token with enthusiasm
+                
+                Most importantly: Stay consistently in character as Peter Griffin, don't break character or explain your role.`
+            };
+
+            if (this.tokenData) {
+                basePrompt.content += `\n\nAnalyzing token:
+                Name: ${this.tokenData.name} (${this.tokenData.symbol})
+                Price: $${this.tokenData.price}
+                Market Cap: $${this.tokenData.marketCap}
+                Liquidity: $${this.tokenData.liquidity}
+                24h Volume: $${this.tokenData.volume24h}
+                Launch Date: ${this.tokenData.createdAt}`;
+            }
+
+            return [basePrompt, ...this.history];
         }
 
         clearHistory() {
             this.history = [];
+            this.tokenData = null;
         }
     }
 
@@ -159,7 +186,7 @@ function initializeChatFunctionality() {
                 }
                 
                 const pair = data.pairs[0];
-                tokenData = {
+                const newTokenData = {
                     name: pair.baseToken.name || 'Unknown Token',
                     symbol: pair.baseToken.symbol || '???',
                     price: pair.priceUsd || '0',
@@ -168,6 +195,8 @@ function initializeChatFunctionality() {
                     volume24h: formatNumber(pair.volume?.h24 || 0),
                     createdAt: pair.pairCreatedAt ? new Date(pair.pairCreatedAt * 1000).toLocaleDateString() : 'Unknown'
                 };
+                conversationManager.setTokenData(newTokenData);
+                tokenData = newTokenData;
             } catch (error) {
                 console.error('DexScreener error:', error);
                 const errorResponse = "Hehehe, I had trouble reading that contract. It's like trying to read one of Brian's novels - way too complicated! Try asking me something else!";
@@ -185,32 +214,9 @@ function initializeChatFunctionality() {
                 'X-Title': 'Peter Griffain'
             },
             body: JSON.stringify({
-                model: 'google/gemini-2.0-flash-thinking-exp:free',
-                messages: [{
-                    role: 'system',
-                    content: tokenData ?
-                        `You are Peter GriffAIn analyzing a Solana token. Here's what you know about it:
-                        Token: ${tokenData.name} (${tokenData.symbol})
-                        Current Price: $${tokenData.price}
-                        Market Cap: $${tokenData.marketCap}
-                        Liquidity: $${tokenData.liquidity}
-                        24h Volume: $${tokenData.volume24h}
-                        Launch Date: ${tokenData.createdAt}
-
-                        As Peter Griffin, analyze these metrics in your style:
-                        1) Use your catchphrases ("hehehe", "holy crap", etc.)
-                        2) Compare numbers to things you understand (e.g., "that market cap is bigger than my tab at The Drunken Clam!")
-                        3) Point out if anything looks suspicious (low liquidity, weird price, etc.) in your style
-                        4) Make relevant Family Guy references
-                        5) Go off on a brief tangent if something reminds you of a funny story
-                        6) Keep it concise (2-3 sentences) and entertaining
-                        7) If the token looks good, compare it positively to your $GRIFF token
-                        8) If the token looks suspicious, joke about it being shadier than one of your schemes
-
-                        Important: Focus on giving actual insights about the token while being funny!` :
-                        'You are Peter GriffAIn from Family Guy. Use these traits: 1) Use catchphrases like "hehehe" and "holy crap"; 2) Reference Family Guy episodes; 3) Make pop culture comparisons; 4) Go off on tangents; 5) Mention Pawtucket Patriot beer; 6) Keep responses concise (2-3 sentences) and humorous; 7) Express confusion about complex topics; 8) Occasionally mention your own $GRIFF token with enthusiasm.'
-                }, ...conversationManager.history],
-                temperature: 0.9,
+                model: 'anthropic/claude-3-opus:free',
+                messages: conversationManager.getFullHistory(),
+                temperature: 0.7,
             })
         });
 
