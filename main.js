@@ -32,6 +32,20 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
+// Utility functions
+function formatNumber(num) {
+    if (num >= 1000000000) {
+        return (num / 1000000000).toFixed(2) + 'B';
+    }
+    if (num >= 1000000) {
+        return (num / 1000000).toFixed(2) + 'M';
+    }
+    if (num >= 1000) {
+        return (num / 1000).toFixed(2) + 'K';
+    }
+    return num.toFixed(2);
+}
+
 // Market data functionality
 function initializeMarketData() {
     async function fetchMarketData() {
@@ -59,19 +73,6 @@ function initializeMarketData() {
             console.error('Error fetching market data:', error);
             updateErrorState();
         }
-    }
-
-    function formatNumber(num) {
-        if (num >= 1000000000) {
-            return (num / 1000000000).toFixed(2) + 'B';
-        }
-        if (num >= 1000000) {
-            return (num / 1000000).toFixed(2) + 'M';
-        }
-        if (num >= 1000) {
-            return (num / 1000).toFixed(2) + 'K';
-        }
-        return num.toFixed(2);
     }
 
     function updateErrorState() {
@@ -263,12 +264,19 @@ function initializeChatFunctionality() {
                     left: 50%;
                     transform: translate(-50%, -50%);
                     background: #fff;
-                    padding: 20px;
-                    border-radius: 10px;
-                    box-shadow: 0 0 20px rgba(0,0,0,0.2);
-                    z-index: 1000;
-                    max-width: 400px;
+                    padding: 25px;
+                    border-radius: 15px;
+                    box-shadow: 0 5px 30px rgba(0,0,0,0.3);
+                    z-index: 9999;
+                    max-width: 450px;
                     width: 90%;
+                    border: 2px solid #007bff;
+                }
+                #token-info-popup h3 {
+                    margin: 0 0 20px 0;
+                    color: #007bff;
+                    font-size: 1.4em;
+                    text-align: center;
                 }
                 .popup-content {
                     position: relative;
