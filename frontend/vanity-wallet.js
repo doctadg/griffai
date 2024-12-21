@@ -20,14 +20,14 @@ function connectWebSocket() {
         isConnected = false;
         generateBtn.disabled = true;
         stopBtn.disabled = true;
-        showStatus('Connection to server lost. Please refresh the page.', true);
+        showStatus('Connection to server lost. Please refresh the page.', 'error');
         // Try to reconnect
         setTimeout(connectWebSocket, 3000);
     };
     
     ws.onerror = function(error) {
         console.error('WebSocket error:', error);
-        showStatus('Connection error. Please check console for details.', true);
+        showStatus('Connection error. Please check console for details.', 'error');
     };
     
     // WebSocket message handling
@@ -41,26 +41,32 @@ function connectWebSocket() {
                 console.log('Progress update:', data.attempts, 'attempts');
                 updateStats(data.attempts);
                 progressEl.style.width = `${(data.attempts % 1000) / 10}%`;
-                showStatus(`Generating... ${data.attempts.toLocaleString()} attempts so far`);
+                // Don't show status message for every progress update to avoid flickering
+                if (data.attempts === 1 || data.attempts % 1000 === 0) {
+                    showStatus(`Generating... ${data.attempts.toLocaleString()} attempts so far`, 'info');
+                }
             } else if (data.type === 'found') {
                 console.log('Found matching address:', data.result.publicKey);
                 currentKeypair = data.result;
                 displayResult(data.result, data.attempts);
                 stopGeneration();
+                showStatus('Successfully generated matching address!', 'success');
             } else if (data.type === 'error') {
                 console.log('Error from server:', data.message);
-                showStatus(data.message, true);
+                showStatus(data.message, 'error');
                 stopGeneration();
             } else if (data.type === 'status') {
                 console.log('Status message:', data.message);
-                showStatus(data.message);
+                showStatus(data.message, 'info');
             } else {
                 console.log('Unknown message type:', data.type);
+                showStatus('Received unknown message type from server', 'error');
             }
         } catch (error) {
             console.error('Error processing message:', error);
             console.error('Error details:', error.message);
-            showStatus('Error processing server response', true);
+            showStatus('Error processing server response: ' + error.message, 'error');
+            stopGeneration();
         }
     };
 }
@@ -101,10 +107,31 @@ function validatePattern() {
     generateBtn.disabled = pattern.length === 0 || pattern.length > 6;
 }
 
-function showStatus(message, isError = false) {
+function showStatus(message, type = 'info') {
     statusMessageEl.style.display = 'block';
-    statusMessageEl.style.background = isError ? 'rgba(220,53,69,0.3)' : 'rgba(255,255,255,0.07)';
+    
+    // Set colors based on message type
+    switch (type) {
+        case 'error':
+            statusMessageEl.style.background = 'rgba(220,53,69,0.2)';
+            statusMessageEl.style.border = '1px solid rgba(220,53,69,0.5)';
+            statusMessageEl.style.color = '#ff4444';
+            break;
+        case 'success':
+            statusMessageEl.style.background = 'rgba(40,167,69,0.2)';
+            statusMessageEl.style.border = '1px solid rgba(40,167,69,0.5)';
+            statusMessageEl.style.color = '#00C851';
+            break;
+        default:
+            statusMessageEl.style.background = 'rgba(255,255,255,0.07)';
+            statusMessageEl.style.border = '1px solid rgba(255,255,255,0.1)';
+            statusMessageEl.style.color = 'inherit';
+    }
+    
     statusMessageEl.querySelector('p').textContent = message;
+    
+    // Scroll the message into view
+    statusMessageEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 function hideStatus() {
@@ -161,7 +188,7 @@ function updateStats(attempts) {
     } catch (error) {
         console.error('Error updating stats:', error);
         console.error('Error details:', error.message);
-        showStatus('Error updating statistics', true);
+        showStatus('Error updating statistics: ' + error.message, 'error');
     }
 }
 
@@ -176,41 +203,45 @@ function startGeneration() {
         });
 
         if (!ws) {
-            showStatus('WebSocket not initialized. Please refresh the page.', true);
+            showStatus('WebSocket not initialized. Please refresh the page.', 'error');
             return;
         }
 
         if (ws.readyState !== WebSocket.OPEN) {
-            showStatus('WebSocket not open. Current state: ' + ws.readyState, true);
+            showStatus('WebSocket not open. Current state: ' + ws.readyState, 'error');
             return;
         }
 
         if (!isConnected) {
-            showStatus('Not connected to server. Please wait for connection...', true);
+            showStatus('Not connected to server. Please wait for connection...', 'error');
             return;
         }
 
         const pattern = patternInput.value.trim();
         console.log('Pattern entered:', pattern);
         if (!pattern || pattern.length > 6) {
-            showStatus('Invalid pattern. Must be 1-6 characters.', true);
+            showStatus('Invalid pattern. Must be 1-6 characters.', 'error');
             return;
         }
 
-        // Reset UI
+        // Reset UI and start counters immediately
         console.log('Resetting UI elements');
         resultEl.style.display = 'none';
         generateBtn.disabled = true;
         stopBtn.disabled = false;
         attemptsEl.textContent = 'Attempts: 0';
-        speedEl.textContent = 'Speed: Calculating...';
+        speedEl.textContent = 'Speed: Initializing...';
         estimateEl.textContent = 'Estimated time: Calculating...';
         progressEl.style.width = '0%';
         startTime = Date.now();
         lastUpdateTime = startTime;
         lastAttempts = 0;
         
-        showStatus(`Starting generation for pattern "${pattern}"... Please wait for first attempt.`);
+        // Show immediate success notification
+        showStatus(`Starting generation for pattern "${pattern}"...`, 'success');
+        
+        // Start updating counters immediately
+        updateStats(0);
         console.log('Starting generation with pattern:', pattern);
 
         // Start generation
@@ -236,7 +267,7 @@ function startGeneration() {
         console.error('Error in startGeneration:', error);
         console.error('Error details:', error.message);
         console.error('Error stack:', error.stack);
-        showStatus('Error starting generation: ' + error.message, true);
+        showStatus('Error starting generation: ' + error.message, 'error');
         generateBtn.disabled = false;
         stopBtn.disabled = true;
     }
@@ -245,17 +276,17 @@ function startGeneration() {
 function stopGeneration() {
     try {
         if (!isConnected || !ws) {
-            showStatus('Not connected to server', true);
+            showStatus('Not connected to server', 'error');
             return;
         }
 
         ws.send(JSON.stringify({ type: 'stop' }));
         generateBtn.disabled = false;
         stopBtn.disabled = true;
-        showStatus('Generation stopped by user');
+        showStatus('Generation stopped by user', 'info');
     } catch (error) {
         console.error('Error in stopGeneration:', error);
-        showStatus('Error stopping generation. Check console for details.', true);
+        showStatus('Error stopping generation: ' + error.message, 'error');
         generateBtn.disabled = false;
         stopBtn.disabled = true;
     }
@@ -267,9 +298,15 @@ function displayResult(result, attempts) {
     resultEl.style.display = 'block';
     
     const timeTaken = Math.round((Date.now() - startTime) / 1000);
-    showStatus(`Success! Found matching address in ${timeTaken} seconds`);
-    showNotification('Vanity Address Found!', 
+    const successMessage = `Success! Found matching address in ${timeTaken} seconds`;
+    showStatus(successMessage, 'success');
+    
+    // Show desktop notification with emoji
+    showNotification('Vanity Address Found! 🎉',
         `Found matching address after ${attempts.toLocaleString()} attempts.\nAddress: ${result.publicKey.slice(0, 12)}...`);
+    
+    // Update progress bar to 100%
+    progressEl.style.width = '100%';
 }
 
 function downloadPrivateKey() {
