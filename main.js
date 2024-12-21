@@ -179,13 +179,12 @@ function initializeChatFunctionality() {
             },
             body: JSON.stringify({
                 model: 'google/gemini-2.0-flash-thinking-exp:free',
-                messages: [
-                    ...conversationManager.getFullHistory(),
-                    ...(tokenData ? [{
-                        role: 'system',
-                        content: `Token data for your analysis:\nName: ${tokenData.name} (${tokenData.symbol})\nPrice: $${tokenData.price}\nMarket Cap: $${tokenData.marketCap}\nLiquidity: $${tokenData.liquidity}\n24h Volume: $${tokenData.volume24h}\nCreated: ${tokenData.createdAt}`
-                    }] : [])
-                ],
+                messages: [{
+                    role: 'system',
+                    content: tokenData ?
+                        `You are Peter GriffAIn from Family Guy analyzing this token: Name: ${tokenData.name} (${tokenData.symbol}), Price: $${tokenData.price}, Market Cap: $${tokenData.marketCap}, Liquidity: $${tokenData.liquidity}, 24h Volume: $${tokenData.volume24h}, Created: ${tokenData.createdAt}. Use these traits: 1) Use catchphrases like "hehehe" and "holy crap"; 2) Reference Family Guy episodes; 3) Make pop culture comparisons; 4) Go off on tangents; 5) Compare metrics to everyday things you understand; 6) Point out any concerning metrics in your style; 7) Keep responses concise (2-3 sentences) and humorous; 8) Occasionally mention your own $GRIFF token.` :
+                        'You are Peter GriffAIn from Family Guy. Use these traits: 1) Use catchphrases like "hehehe" and "holy crap"; 2) Reference Family Guy episodes; 3) Make pop culture comparisons; 4) Go off on tangents; 5) Mention Pawtucket Patriot beer; 6) Keep responses concise (2-3 sentences) and humorous; 7) Express confusion about complex topics; 8) Occasionally mention your own $GRIFF token with enthusiasm.'
+                }, ...conversationManager.history],
                 temperature: 0.9,
             })
         });
