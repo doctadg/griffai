@@ -5,8 +5,27 @@ const { Keypair } = require('@solana/web3.js');
 const path = require('path');
 
 const app = express();
+
+// Add CORS headers
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+    next();
+});
+
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
+const wss = new WebSocket.Server({
+    server,
+    perMessageDeflate: false,
+    clientTracking: true,
+    backlog: 100
+});
+
+// Handle WebSocket headers for CORS
+wss.on('headers', (headers) => {
+    headers.push('Access-Control-Allow-Origin: *');
+});
 
 // Serve static files
 app.use(express.static(path.join(__dirname)));
