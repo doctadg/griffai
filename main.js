@@ -141,7 +141,6 @@ function initializeChatFunctionality() {
 
         clearHistory() {
             this.history = [];
-            this.tokenData = null;
         }
     }
 
@@ -153,40 +152,9 @@ function initializeChatFunctionality() {
         // Check if the message contains a Solana contract address (base58 format, case sensitive)
         const solanaAddressMatch = prompt.match(/[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{32,44}/);
         
-        let tokenData = null;
+        // Handle token detection separately from chat
         if (solanaAddressMatch) {
-            try {
-                const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${solanaAddressMatch[0]}`);
-                if (!response.ok) {
-                    throw new Error(`DexScreener API error: ${response.status}`);
-                }
-                
-                const data = await response.json();
-                
-                if (!data || !data.pairs || data.pairs.length === 0) {
-                    return null; // Return null instead of showing message in chat
-                }
-                
-                const pair = data.pairs[0];
-                const newTokenData = {
-                    name: pair.baseToken.name || 'Unknown Token',
-                    symbol: pair.baseToken.symbol || '???',
-                    price: parseFloat(pair.priceUsd || '0').toFixed(12),
-                    liquidity: formatNumber(pair.liquidity?.usd || 0),
-                    marketCap: formatNumber(pair.fdv || 0),
-                    volume24h: formatNumber(pair.volume?.h24 || 0),
-                    priceChange24h: (pair.priceChange?.h24 || 0).toFixed(2),
-                    createdAt: pair.pairCreatedAt ? new Date(parseInt(pair.pairCreatedAt)).toLocaleDateString() : 'Unknown'
-                };
-
-                // Show token info popup
-                showTokenInfoPopup(newTokenData);
-            } catch (error) {
-                console.error('DexScreener error:', error);
-                const errorResponse = "Hehehe, I had trouble reading that contract. It's like trying to read one of Brian's novels - way too complicated! Try asking me something else!";
-                conversationManager.addAIMessage(errorResponse);
-                return errorResponse;
-            }
+            fetchAndShowTokenInfo(solanaAddressMatch[0]);
         }
 
         const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -226,6 +194,39 @@ function initializeChatFunctionality() {
         }
         
         return aiResponse || fallbackResponse;
+    }
+
+    async function fetchAndShowTokenInfo(address) {
+        try {
+            const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${address}`);
+            if (!response.ok) {
+                console.error('DexScreener API error:', response.status);
+                return;
+            }
+            
+            const data = await response.json();
+            
+            if (!data || !data.pairs || data.pairs.length === 0) {
+                console.error('No token data found');
+                return;
+            }
+            
+            const pair = data.pairs[0];
+            const tokenData = {
+                name: pair.baseToken.name || 'Unknown Token',
+                symbol: pair.baseToken.symbol || '???',
+                price: parseFloat(pair.priceUsd || '0').toFixed(12),
+                liquidity: formatNumber(pair.liquidity?.usd || 0),
+                marketCap: formatNumber(pair.fdv || 0),
+                volume24h: formatNumber(pair.volume?.h24 || 0),
+                priceChange24h: (pair.priceChange?.h24 || 0).toFixed(2),
+                createdAt: pair.pairCreatedAt ? new Date(parseInt(pair.pairCreatedAt)).toLocaleDateString() : 'Unknown'
+            };
+
+            showTokenInfoPopup(tokenData);
+        } catch (error) {
+            console.error('Error fetching token data:', error);
+        }
     }
 
     function showTokenInfoPopup(tokenData) {
