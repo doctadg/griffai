@@ -26,58 +26,41 @@ const workerPool = [];
 const workerScript = `
 const { parentPort } = require('worker_threads');
 const { Keypair } = require('@solana/web3.js');
-const bs58 = require('bs58');
 const crypto = require('crypto');
 
 let currentPattern = null;
 let patternLength = 0;
-const BATCH_SIZE = 25000; // Increased batch size for better throughput
+const BATCH_SIZE = 5000; // Smaller batch size for more frequent updates
 
-// Pre-compute base58 alphabet for faster comparison
-const BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
-const BASE58_MAP = new Map(Array.from(BASE58_ALPHABET).map((char, index) => [char, index]));
-
-// Pre-allocate buffers for reuse
-const seedBuffer = new Uint8Array(32);
-const pubkeyBuffer = new Uint8Array(32);
-const base58Chars = new Uint8Array(44); // Max length of base58 encoded public key
-
-// Fast base58 prefix check without full encoding
-function checkBase58Prefix(publicKeyBytes, pattern, length) {
-    let carry = 0;
-    let charIndex = 0;
-    
-    // Process first few bytes to get the pattern length worth of base58 chars
-    for (let i = 0; i < Math.min(length + 1, publicKeyBytes.length); i++) {
-        carry = carry * 256 + publicKeyBytes[i];
-        while (carry >= 58) {
-            const digit = carry % 58;
-            if (charIndex < length && BASE58_ALPHABET[digit] !== pattern[charIndex]) {
-                return false;
-            }
-            charIndex++;
-            carry = Math.floor(carry / 58);
-        }
-    }
-    
-    if (carry > 0) {
-        if (charIndex < length && BASE58_ALPHABET[carry] !== pattern[charIndex]) {
-            return false;
-        }
-    }
-    
-    return true;
+// Base58 alphabet for direct conversion
+const ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+const ALPHABET_MAP = {};
+for (let i = 0; i < ALPHABET.length; i++) {
+    ALPHABET_MAP[ALPHABET[i]] = i;
 }
 
-// Generate random keypair using pre-allocated buffers
-function generateKeypairFast() {
-    crypto.randomFillSync(seedBuffer);
-    const keypair = Keypair.fromSeed(seedBuffer);
-    pubkeyBuffer.set(keypair.publicKey.toBytes());
-    return {
-        publicKey: pubkeyBuffer,
-        secretKey: keypair.secretKey
-    };
+// Pre-allocate buffers
+const seedBuffer = Buffer.alloc(32);
+const pubkeyBuffer = Buffer.alloc(32);
+
+// Fast base58 check using native Buffer
+function checkPrefix(pubkey, pattern) {
+    let carry = 0n;
+    let digits = 0;
+    
+    for (let i = 0; i < Math.min(3, pubkey.length); i++) {
+        carry = (carry * 256n) + BigInt(pubkey[i]);
+    }
+    
+    let result = '';
+    while (carry > 0n && digits < patternLength) {
+        const remainder = Number(carry % 58n);
+        result = ALPHABET[remainder] + result;
+        carry = carry / 58n;
+        digits++;
+    }
+    
+    return result.toLowerCase().startsWith(pattern);
 }
 
 parentPort.on('message', ({ type, pattern }) => {
@@ -87,23 +70,21 @@ parentPort.on('message', ({ type, pattern }) => {
     }
     else if (type === 'generate') {
         for (let i = 0; i < BATCH_SIZE; i++) {
-            const keypair = generateKeypairFast();
+            crypto.randomFillSync(seedBuffer);
+            const keypair = Keypair.fromSeed(seedBuffer);
+            pubkeyBuffer.set(keypair.publicKey.toBytes());
             
-            if (checkBase58Prefix(keypair.publicKey, currentPattern, patternLength)) {
-                // Only encode to base58 when we find a match
-                const address = bs58.encode(keypair.publicKey);
+            if (checkPrefix(pubkeyBuffer, currentPattern)) {
                 parentPort.postMessage({
                     type: 'found',
                     result: {
-                        publicKey: address,
+                        publicKey: keypair.publicKey.toBase58(),
                         secretKey: Array.from(keypair.secretKey)
                     }
                 });
                 return;
             }
         }
-        
-        // Use a pre-stringified message for progress updates
         parentPort.postMessage({ type: 'batch', count: BATCH_SIZE });
     }
 });
@@ -118,22 +99,17 @@ for (let i = 0; i < NUM_WORKERS; i++) {
     });
 }
 
-// Pre-stringify common messages
-const PROGRESS_MESSAGE_PREFIX = '{"type":"progress","attempts":';
-const PROGRESS_MESSAGE_SUFFIX = '}';
-
 // WebSocket connection handling
 wss.on('connection', (ws) => {
     let isGenerating = false;
     let totalAttempts = 0;
     let lastProgressUpdate = Date.now();
-    const PROGRESS_UPDATE_INTERVAL = 1000; // 1 second interval
+    const PROGRESS_UPDATE_INTERVAL = 100; // More frequent updates
 
     const sendProgress = () => {
         const now = Date.now();
         if (now - lastProgressUpdate >= PROGRESS_UPDATE_INTERVAL) {
-            // Avoid JSON.stringify overhead by concatenating strings
-            ws.send(PROGRESS_MESSAGE_PREFIX + totalAttempts + PROGRESS_MESSAGE_SUFFIX);
+            ws.send(`{"type":"progress","attempts":${totalAttempts}}`);
             lastProgressUpdate = now;
         }
     };
