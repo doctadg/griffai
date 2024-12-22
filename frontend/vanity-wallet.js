@@ -219,9 +219,7 @@ function downloadPrivateKey() {
     if (!currentKeypair) return;
     
     // Convert the secret key to base58 format for Phantom
-    const bs58PrivateKey = solanaWeb3.Keypair.fromSecretKey(
-        new Uint8Array(currentKeypair.secretKey)
-    ).secretKey.toString('base58');
+    const bs58PrivateKey = solanaWeb3.bs58.encode(new Uint8Array(currentKeypair.secretKey));
 
     const instructions = `
 === SOLANA VANITY WALLET INSTRUCTIONS ===
