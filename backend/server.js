@@ -7,11 +7,7 @@ const { Worker } = require('worker_threads');
 const os = require('os');
 
 const app = express();
-
-// Serve static files from the frontend directory
 app.use(express.static(path.join(__dirname, '../frontend')));
-
-// Add CORS headers
 app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -20,100 +16,145 @@ app.use((req, res, next) => {
 });
 
 const server = http.createServer(app);
-const wss = new WebSocket.Server({
-    noServer: true,
-    perMessageDeflate: false,
-    clientTracking: true,
-    backlog: 100
-});
+const wss = new WebSocket.Server({ noServer: true, perMessageDeflate: false });
 
-// Handle upgrade event manually
-server.on('upgrade', (request, socket, head) => {
-    console.log('Received upgrade request');
-    
-    // Add CORS headers to upgrade response
-    const responseHeaders = [
-        'HTTP/1.1 101 Web Socket Protocol Handshake',
-        'Upgrade: WebSocket',
-        'Connection: Upgrade',
-        'Access-Control-Allow-Origin: *'
-    ];
-    
-    wss.handleUpgrade(request, socket, head, (ws) => {
-        console.log('WebSocket connection established');
-        wss.emit('connection', ws, request);
-    });
-});
-
-// Store active generation tasks
-const activeTasks = new Map();
-
-// Create a worker pool
-const NUM_WORKERS = os.cpus().length; // Use all available CPU cores
+// Create worker pool at startup
+const NUM_WORKERS = os.cpus().length;
 const workerPool = [];
+
+// Worker script as a separate string for better readability
+const workerScript = `
+const { parentPort } = require('worker_threads');
+const { Keypair } = require('@solana/web3.js');
+const bs58 = require('bs58');
+const crypto = require('crypto');
+
+let currentPattern = null;
+let patternLength = 0;
+const BATCH_SIZE = 25000; // Increased batch size for better throughput
+
+// Pre-compute base58 alphabet for faster comparison
+const BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+const BASE58_MAP = new Map(Array.from(BASE58_ALPHABET).map((char, index) => [char, index]));
+
+// Pre-allocate buffers for reuse
+const seedBuffer = new Uint8Array(32);
+const pubkeyBuffer = new Uint8Array(32);
+const base58Chars = new Uint8Array(44); // Max length of base58 encoded public key
+
+// Fast base58 prefix check without full encoding
+function checkBase58Prefix(publicKeyBytes, pattern, length) {
+    let carry = 0;
+    let charIndex = 0;
+    
+    // Process first few bytes to get the pattern length worth of base58 chars
+    for (let i = 0; i < Math.min(length + 1, publicKeyBytes.length); i++) {
+        carry = carry * 256 + publicKeyBytes[i];
+        while (carry >= 58) {
+            const digit = carry % 58;
+            if (charIndex < length && BASE58_ALPHABET[digit] !== pattern[charIndex]) {
+                return false;
+            }
+            charIndex++;
+            carry = Math.floor(carry / 58);
+        }
+    }
+    
+    if (carry > 0) {
+        if (charIndex < length && BASE58_ALPHABET[carry] !== pattern[charIndex]) {
+            return false;
+        }
+    }
+    
+    return true;
+}
+
+// Generate random keypair using pre-allocated buffers
+function generateKeypairFast() {
+    crypto.randomFillSync(seedBuffer);
+    const keypair = Keypair.fromSeed(seedBuffer);
+    pubkeyBuffer.set(keypair.publicKey.toBytes());
+    return {
+        publicKey: pubkeyBuffer,
+        secretKey: keypair.secretKey
+    };
+}
+
+parentPort.on('message', ({ type, pattern }) => {
+    if (type === 'setPattern') {
+        currentPattern = pattern.toLowerCase();
+        patternLength = pattern.length;
+    }
+    else if (type === 'generate') {
+        for (let i = 0; i < BATCH_SIZE; i++) {
+            const keypair = generateKeypairFast();
+            
+            if (checkBase58Prefix(keypair.publicKey, currentPattern, patternLength)) {
+                // Only encode to base58 when we find a match
+                const address = bs58.encode(keypair.publicKey);
+                parentPort.postMessage({
+                    type: 'found',
+                    result: {
+                        publicKey: address,
+                        secretKey: Array.from(keypair.secretKey)
+                    }
+                });
+                return;
+            }
+        }
+        
+        // Use a pre-stringified message for progress updates
+        parentPort.postMessage({ type: 'batch', count: BATCH_SIZE });
+    }
+});
+`;
+
+// Initialize worker pool
+for (let i = 0; i < NUM_WORKERS; i++) {
+    const worker = new Worker(workerScript, { eval: true });
+    workerPool.push({
+        worker,
+        busy: false
+    });
+}
+
+// Pre-stringify common messages
+const PROGRESS_MESSAGE_PREFIX = '{"type":"progress","attempts":';
+const PROGRESS_MESSAGE_SUFFIX = '}';
 
 // WebSocket connection handling
 wss.on('connection', (ws) => {
-    console.log('New WebSocket connection established');
     let isGenerating = false;
     let totalAttempts = 0;
-    let lastProgressUpdate = 0;
-    let activeWorkers = [];
-
-    // Increase progress update interval to reduce overhead
-    const PROGRESS_UPDATE_INTERVAL = 250; // 250ms instead of 100ms
+    let lastProgressUpdate = Date.now();
+    const PROGRESS_UPDATE_INTERVAL = 1000; // 1 second interval
 
     const sendProgress = () => {
         const now = Date.now();
         if (now - lastProgressUpdate >= PROGRESS_UPDATE_INTERVAL) {
-            ws.send(JSON.stringify({
-                type: 'progress',
-                attempts: totalAttempts
-            }));
+            // Avoid JSON.stringify overhead by concatenating strings
+            ws.send(PROGRESS_MESSAGE_PREFIX + totalAttempts + PROGRESS_MESSAGE_SUFFIX);
             lastProgressUpdate = now;
         }
     };
 
-    // Function to create a new worker
-    const createWorker = (pattern) => {
-        const worker = new Worker(`
-            const { parentPort } = require('worker_threads');
-            const { Keypair } = require('@solana/web3.js');
+    const startGeneration = (pattern) => {
+        isGenerating = true;
+        totalAttempts = 0;
 
-            // Pre-compile pattern to regex for faster matching
-            const patternRegex = new RegExp('^' + '${pattern}', 'i');
-            
-            // Larger batch size for better performance
-            const BATCH_SIZE = 1000;
+        // Set pattern for all workers
+        workerPool.forEach(({ worker }) => {
+            worker.postMessage({ type: 'setPattern', pattern });
+        });
 
-            parentPort.on('message', ({ type }) => {
-                if (type === 'generate') {
-                    try {
-                        for (let i = 0; i < BATCH_SIZE; i++) {
-                            const keypair = Keypair.generate();
-                            const address = keypair.publicKey.toString();
-                            
-                            // Use regex test for faster matching
-                            if (patternRegex.test(address)) {
-                                parentPort.postMessage({
-                                    type: 'found',
-                                    result: {
-                                        publicKey: address,
-                                        secretKey: Array.from(keypair.secretKey)
-                                    }
-                                });
-                                return;
-                            }
-                        }
-                        // Report batch completion
-                        parentPort.postMessage({ type: 'batch', count: BATCH_SIZE });
-                    } catch (error) {
-                        parentPort.postMessage({ type: 'error', error: error.message });
-                    }
-                }
-            });
-        `, { eval: true });
+        // Start generation on all workers
+        workerPool.forEach(({ worker }) => {
+            worker.postMessage({ type: 'generate' });
+        });
+    };
 
+    // Set up worker message handlers
+    workerPool.forEach(({ worker }) => {
         worker.on('message', (message) => {
             if (!isGenerating) return;
 
@@ -130,23 +171,9 @@ wss.on('connection', (ws) => {
                     result: message.result,
                     attempts: totalAttempts
                 }));
-                stopWorkers();
-            } else if (message.type === 'error') {
-                console.error('Worker error:', message.error);
             }
         });
-
-        worker.on('error', (error) => {
-            console.error('Worker error:', error);
-        });
-
-        return worker;
-    };
-
-    const stopWorkers = () => {
-        activeWorkers.forEach(worker => worker.terminate());
-        activeWorkers = [];
-    };
+    });
 
     ws.on('message', (message) => {
         try {
@@ -154,80 +181,41 @@ wss.on('connection', (ws) => {
 
             if (data.type === 'start') {
                 if (isGenerating) {
-                    ws.send(JSON.stringify({
-                        type: 'error',
-                        message: 'Generation already in progress'
-                    }));
+                    ws.send('{"type":"error","message":"Generation already in progress"}');
                     return;
                 }
-                
+
                 if (!data.pattern || typeof data.pattern !== 'string' || data.pattern.length > 6) {
-                    ws.send(JSON.stringify({
-                        type: 'error',
-                        message: 'Invalid pattern. Must be 1-6 characters.'
-                    }));
+                    ws.send('{"type":"error","message":"Invalid pattern. Must be 1-6 characters."}');
                     return;
                 }
 
-                isGenerating = true;
-                totalAttempts = 0;
-                lastProgressUpdate = 0;
-                const pattern = data.pattern.toLowerCase();
-
-                // Start multiple workers
-                for (let i = 0; i < NUM_WORKERS; i++) {
-                    const worker = createWorker(pattern);
-                    activeWorkers.push(worker);
-                    worker.postMessage({ type: 'generate' });
-                }
+                startGeneration(data.pattern);
             }
 
             if (data.type === 'stop') {
                 isGenerating = false;
-                stopWorkers();
             }
         } catch (error) {
             console.error('Error processing message:', error);
-            ws.send(JSON.stringify({
-                type: 'error',
-                message: 'Internal server error'
-            }));
+            ws.send('{"type":"error","message":"Internal server error"}');
         }
     });
 
     ws.on('close', () => {
         isGenerating = false;
-        stopWorkers();
     });
 
-    ws.on('error', (error) => {
-        console.error('WebSocket error:', error);
-        isGenerating = false;
-        stopWorkers();
+    ws.send('{"type":"status","message":"Connected to server"}');
+});
+
+server.on('upgrade', (request, socket, head) => {
+    wss.handleUpgrade(request, socket, head, (ws) => {
+        wss.emit('connection', ws, request);
     });
-
-    // Send initial connection success message
-    ws.send(JSON.stringify({
-        type: 'status',
-        message: 'Connected to server'
-    }));
 });
 
-// Error handling for the server
-server.on('error', (error) => {
-    console.error('Server error:', error);
-});
-
-process.on('uncaughtException', (error) => {
-    console.error('Uncaught exception:', error);
-});
-
-process.on('unhandledRejection', (error) => {
-    console.error('Unhandled rejection:', error);
-});
-
-// Start server
 const PORT = process.env.PORT || 80;
 server.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on port ${PORT} (0.0.0.0)`);
+    console.log(`Server running on port ${PORT}`);
 });
