@@ -49,7 +49,7 @@ server.on('upgrade', (request, socket, head) => {
 const activeTasks = new Map();
 
 // Create a worker pool
-const NUM_WORKERS = Math.max(1, os.cpus().length - 1); // Leave one core free for the main thread
+const NUM_WORKERS = os.cpus().length; // Use all available CPU cores
 const workerPool = [];
 
 // WebSocket connection handling
