@@ -23,8 +23,8 @@ let lastAttempts = 0;
 let updateTimeout = null;
 let lastSpeedUpdate = 0;
 let movingAverageSpeed = 0;
-const SPEED_UPDATE_INTERVAL = 250; // Match backend update interval
-const ALPHA = 0.3; // Exponential moving average factor
+const SPEED_UPDATE_INTERVAL = 1000; // Match backend update interval
+const ALPHA = 0.5; // Increased smoothing for more stable speed display
 
 // Connect to WebSocket server
 function connectWebSocket() {
@@ -155,9 +155,9 @@ function updateStats(attempts) {
     lastUpdateTime = now;
     lastAttempts = attempts;
     
-    // Update progress bar less frequently to reduce jitter
-    if (attempts % 5000 === 0) {
-        progressEl.style.width = `${(attempts % 100000) / 1000}%`;
+    // Update progress bar less frequently to reduce overhead
+    if (attempts % 50000 === 0) {
+        progressEl.style.width = `${(attempts % 1000000) / 10000}%`;
     }
 }
 

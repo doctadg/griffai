@@ -84,48 +84,60 @@ const FIRST_CHAR_TABLE = new Uint8Array(256); // First character lookup
     }
 })();
 
-// Optimized base58 check with lookup tables
+// Faster base58 prefix matching
 function checkPrefix(pubkey) {
-    // Optimize for single character (most common case)
-    if (patternLength === 1) {
-        return FIRST_CHAR_TABLE[pubkey[0]] === PATTERN_CHARS[0];
+    // Count leading zeros
+    let leadingZeros = 0;
+    while (leadingZeros < pubkey.length && pubkey[leadingZeros] === 0) {
+        leadingZeros++;
+    }
+
+    // Base58 alphabet for Solana
+    const base58Alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+    
+    // Convert non-zero bytes to big integer
+    let num = BigInt(0);
+    for (let i = leadingZeros; i < pubkey.length; i++) {
+        num = num * BigInt(256) + BigInt(pubkey[i]);
     }
     
-    // Optimize for two characters
-    if (patternLength === 2) {
-        const chars = LOOKUP_TABLE[pubkey[0] * 256 + pubkey[1]];
-        return (chars >> 8) === PATTERN_CHARS[0] &&
-               (chars & 0xFF) === PATTERN_CHARS[1];
+    // Convert to base58
+    let base58Str = '';
+    while (num > 0) {
+        const remainder = Number(num % BigInt(58));
+        base58Str = base58Alphabet[remainder] + base58Str;
+        num = num / BigInt(58);
     }
     
-    // For 3+ characters, use a more efficient base58 conversion
-    // Pre-allocate buffer for better performance
-    const digits = new Uint8Array(8); // Max needed for prefix check
-    let length = 0;
+    // Prepend leading '1's for zero bytes
+    base58Str = '1'.repeat(leadingZeros) + base58Str;
     
-    // Process first 4 bytes (enough for up to 6 base58 chars)
-    let val = (pubkey[0] * 16777216) + // 256^3
-              (pubkey[1] * 65536) +     // 256^2
-              (pubkey[2] * 256) +       // 256^1
-              pubkey[3];                // 256^0
-              
-    while (val > 0 && length < patternLength) {
-        digits[length++] = val % 58;
-        val = Math.floor(val / 58);
+    // Ensure consistent length (Solana public keys are typically 44 characters)
+    while (base58Str.length < 44) {
+        base58Str = '1' + base58Str;
     }
     
-    // Handle leading zeros
-    while (length < patternLength) {
-        digits[length++] = 0; // '1' in base58
+    // Trim to exactly 44 characters
+    base58Str = base58Str.slice(-44);
+    
+    // Debugging: log the full base58 string and pattern
+    try {
+        parentPort.postMessage({
+            type: 'debug',
+            message: 'Base58 Debug',
+            details: {
+                base58Str: base58Str,
+                pattern: currentPattern,
+                matches: base58Str.toLowerCase().startsWith(currentPattern)
+            }
+        });
+    } catch (e) {
+        // Silently handle any messaging errors
+        console.error('Debug message error:', e);
     }
     
-    // Compare pattern from right to left (natural order from division)
-    for (let i = 0; i < patternLength; i++) {
-        if (ALPHABET[digits[patternLength - 1 - i]].charCodeAt(0) !== PATTERN_CHARS[i]) {
-            return false;
-        }
-    }
-    return true;
+    // Check if the base58 string starts with the desired pattern
+    return base58Str.toLowerCase().startsWith(currentPattern);
 }
 
 // Pre-compile pattern for faster matching
