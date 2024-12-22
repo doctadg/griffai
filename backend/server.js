@@ -19,26 +19,22 @@ app.use((req, res, next) => {
 const server = http.createServer(app);
 const wss = new WebSocket.Server({
     noServer: true,
-    perMessageDeflate: false, // Disable compression for better stability
-    maxPayload: 1024 * 16 // 16KB max message size
+    perMessageDeflate: false,
+    maxPayload: 1024 * 16
 });
 
-// Create worker pool at startup - use half of available cores for better stability
 const NUM_WORKERS = Math.max(1, Math.floor(os.cpus().length / 2));
 const workerPool = [];
 
-// Optimized progress tracking
 const progressTracker = {
     batchResults: new Map(),
     lastBroadcast: 0,
-    BROADCAST_INTERVAL: 2000, // Increased interval to reduce overhead
-    totalAttempts: 0 // Cache total attempts
+    BROADCAST_INTERVAL: 2000,
+    totalAttempts: 0
 };
 
-// Track active connections
 const activeConnections = new Set();
 
-// Worker script as a separate string for better readability
 const workerScript = `
 const { parentPort } = require('worker_threads');
 const { Keypair } = require('@solana/web3.js');
@@ -46,108 +42,54 @@ const crypto = require('crypto');
 
 let currentPattern = null;
 let patternLength = 0;
-const BATCH_SIZE = 500000; // Further increased batch size for maximum throughput
+const BATCH_SIZE = 500000;
 
-// Base58 alphabet and lookup optimization
+// Base58 alphabet and lookup table
 const ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
-const ALPHABET_MAP = new Uint8Array(128);
-const PATTERN_CHARS = new Uint8Array(6); // Pre-allocate pattern chars
-for (let i = 0; i < ALPHABET.length; i++) {
-    ALPHABET_MAP[ALPHABET.charCodeAt(i)] = i;
-}
+const ALPHABET_MAP = new Map(ALPHABET.split('').map((char, index) => [char, index]));
 
-// Pre-allocate buffers with direct Buffer views for better performance
+// Pre-allocate buffers
 const seedBuffer = Buffer.alloc(32);
 const pubkeyBuffer = Buffer.alloc(32);
-const base58Cache = Buffer.alloc(45); // Max base58 length for 32 bytes
-const view = new DataView(pubkeyBuffer.buffer); // Direct view for faster reads
 
-// Pre-computed tables for base58 encoding
-const LOOKUP_TABLE = new Uint16Array(256 * 256); // 64KB table for first two bytes
-const FIRST_CHAR_TABLE = new Uint8Array(256); // First character lookup
-
-// Initialize lookup tables
-(() => {
-    // First character lookup (most common case)
-    for (let i = 0; i < 256; i++) {
-        FIRST_CHAR_TABLE[i] = ALPHABET[i % 58].charCodeAt(0);
-    }
-    
-    // Two character lookup
-    for (let b1 = 0; b1 < 256; b1++) {
-        for (let b2 = 0; b2 < 256; b2++) {
-            const value = b1 * 256 + b2;
-            const c1 = ALPHABET[Math.floor(value / 58) % 58];
-            const c2 = ALPHABET[value % 58];
-            LOOKUP_TABLE[b1 * 256 + b2] = (c1.charCodeAt(0) << 8) | c2.charCodeAt(0);
+// Efficient base58 encoding for prefix check
+function base58Encode(buffer) {
+    const digits = [0];
+    for (let i = 0; i < buffer.length; i++) {
+        let carry = buffer[i];
+        for (let j = 0; j < digits.length; j++) {
+            carry += digits[j] << 8;
+            digits[j] = carry % 58;
+            carry = (carry / 58) | 0;
+        }
+        while (carry > 0) {
+            digits.push(carry % 58);
+            carry = (carry / 58) | 0;
         }
     }
-})();
 
-// Faster base58 prefix matching
-function checkPrefix(pubkey) {
-    // Count leading zeros
-    let leadingZeros = 0;
-    while (leadingZeros < pubkey.length && pubkey[leadingZeros] === 0) {
-        leadingZeros++;
+    // Leading zero bytes
+    for (let i = 0; i < buffer.length && buffer[i] === 0; i++) {
+        digits.push(0);
     }
 
-    // Base58 alphabet for Solana
-    const base58Alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
-    
-    // Convert non-zero bytes to big integer
-    let num = BigInt(0);
-    for (let i = leadingZeros; i < pubkey.length; i++) {
-        num = num * BigInt(256) + BigInt(pubkey[i]);
+    // Convert to base58 string
+    let result = '';
+    for (let i = digits.length - 1; i >= 0; i--) {
+        result += ALPHABET[digits[i]];
     }
     
-    // Convert to base58
-    let base58Str = '';
-    while (num > 0) {
-        const remainder = Number(num % BigInt(58));
-        base58Str = base58Alphabet[remainder] + base58Str;
-        num = num / BigInt(58);
-    }
-    
-    // Prepend leading '1's for zero bytes
-    base58Str = '1'.repeat(leadingZeros) + base58Str;
-    
-    // Ensure consistent length (Solana public keys are typically 44 characters)
-    while (base58Str.length < 44) {
-        base58Str = '1' + base58Str;
-    }
-    
-    // Trim to exactly 44 characters
-    base58Str = base58Str.slice(-44);
-    
-    // Debugging: log the full base58 string and pattern
-    try {
-        parentPort.postMessage({
-            type: 'debug',
-            message: 'Base58 Debug',
-            details: {
-                base58Str: base58Str,
-                pattern: currentPattern,
-                matches: base58Str.toLowerCase().startsWith(currentPattern)
-            }
-        });
-    } catch (e) {
-        // Silently handle any messaging errors
-        console.error('Debug message error:', e);
-    }
-    
-    // Check if the base58 string starts with the desired pattern
-    return base58Str.toLowerCase().startsWith(currentPattern);
+    return result;
 }
 
-// Pre-compile pattern for faster matching
+function checkPrefix(pubkey) {
+    const base58 = base58Encode(pubkey);
+    return base58.toLowerCase().startsWith(currentPattern);
+}
+
 function setPattern(pattern) {
     currentPattern = pattern.toLowerCase();
     patternLength = pattern.length;
-    // Pre-fill pattern chars for faster comparison
-    for (let i = 0; i < patternLength; i++) {
-        PATTERN_CHARS[i] = currentPattern.charCodeAt(i);
-    }
 }
 
 parentPort.on('message', ({ type, pattern }) => {
@@ -158,14 +100,12 @@ parentPort.on('message', ({ type, pattern }) => {
         let found = false;
         let i = 0;
         
-        // Process in larger chunks for maximum performance
-        const MINI_BATCH = 50000; // Increased mini-batch size
-        const keypair = Keypair.fromSeed(seedBuffer); // Pre-allocate keypair
+        const MINI_BATCH = 50000;
+        const keypair = Keypair.fromSeed(seedBuffer);
         
         while (i < BATCH_SIZE) {
             const endBatch = Math.min(i + MINI_BATCH, BATCH_SIZE);
             
-            // Inner loop optimized for maximum throughput
             for (; i < endBatch; i++) {
                 crypto.randomFillSync(seedBuffer);
                 keypair.secretKey.set(seedBuffer);
@@ -186,7 +126,6 @@ parentPort.on('message', ({ type, pattern }) => {
             
             if (found) break;
             
-            // Report progress less frequently
             if (i % MINI_BATCH === 0) {
                 parentPort.postMessage({ type: 'batch', count: i });
             }
@@ -199,7 +138,6 @@ parentPort.on('message', ({ type, pattern }) => {
 });
 `;
 
-// Initialize worker pool
 for (let i = 0; i < NUM_WORKERS; i++) {
     const worker = new Worker(workerScript, { eval: true });
     workerPool.push({
@@ -208,14 +146,11 @@ for (let i = 0; i < NUM_WORKERS; i++) {
     });
 }
 
-// Optimized broadcast with cached attempts
 function broadcastProgress() {
     const now = Date.now();
     if (now - progressTracker.lastBroadcast >= progressTracker.BROADCAST_INTERVAL) {
-        // Pre-construct message once
         const message = `{"type":"progress","attempts":${progressTracker.totalAttempts}}`;
         
-        // Broadcast to all clients in one pass
         const clients = wss.clients;
         for (const client of clients) {
             if (client.readyState === WebSocket.OPEN && client.isGenerating) {
@@ -230,7 +165,6 @@ function broadcastProgress() {
     }
 }
 
-// WebSocket connection handling
 wss.on('connection', (ws) => {
     ws.isGenerating = false;
     ws.workerId = crypto.randomBytes(4).toString('hex');
@@ -240,41 +174,33 @@ wss.on('connection', (ws) => {
         ws.isGenerating = true;
         progressTracker.batchResults.set(ws.workerId, 0);
 
-        // Set pattern for all workers
         workerPool.forEach(({ worker }) => {
             worker.postMessage({ type: 'setPattern', pattern });
         });
 
-        // Start generation on all workers with staggered delays
         workerPool.forEach(({ worker }, index) => {
             setTimeout(() => {
                 if (ws.isGenerating) {
                     worker.postMessage({ type: 'generate' });
                 }
-            }, index * 50); // Stagger worker starts to prevent CPU spikes
+            }, index * 50);
         });
     };
 
-    // Initialize worker message handlers
     const workerMessageHandlers = new Map();
 
-    // Set up worker message handlers with improved error handling
     workerPool.forEach(({ worker }) => {
         const messageHandler = (message) => {
-            // Check if connection is still valid
             if (!activeConnections.has(ws) || !ws.isGenerating) return;
 
             try {
                 if (message.type === 'batch') {
-                    // Update total attempts directly
                     progressTracker.totalAttempts += message.count;
                     
-                    // Only broadcast occasionally to reduce overhead
                     if (ws.readyState === WebSocket.OPEN) {
                         broadcastProgress();
                     }
                     
-                    // Continue generation immediately if active
                     if (ws.isGenerating && ws.readyState === WebSocket.OPEN) {
                         setImmediate(() => worker.postMessage({ type: 'generate' }));
                     }
@@ -290,7 +216,6 @@ wss.on('connection', (ws) => {
                         }));
                     }
                     
-                    // Cleanup
                     progressTracker.batchResults.set(ws.workerId, 0);
                 }
             } catch (error) {
@@ -308,7 +233,6 @@ wss.on('connection', (ws) => {
         workerMessageHandlers.set(worker, messageHandler);
     });
 
-    // Store handlers for cleanup
     ws.workerHandlers = workerMessageHandlers;
 
     ws.on('message', (message) => {
@@ -326,7 +250,6 @@ wss.on('connection', (ws) => {
                     return;
                 }
 
-                // Validate pattern characters
                 const validChars = /^[1-9A-HJ-NP-Za-km-z]+$/;
                 if (!validChars.test(data.pattern)) {
                     ws.send('{"type":"error","message":"Pattern contains invalid characters"}');
@@ -347,16 +270,13 @@ wss.on('connection', (ws) => {
         }
     });
 
-    // Track new connection and set up cleanup
     activeConnections.add(ws);
 
-    // Cleanup function for connection
     const cleanup = () => {
         ws.isGenerating = false;
         progressTracker.batchResults.delete(ws.workerId);
         activeConnections.delete(ws);
         
-        // Remove stored handlers
         if (ws.workerHandlers) {
             ws.workerHandlers.forEach((handler, worker) => {
                 worker.removeListener('message', handler);
@@ -364,7 +284,6 @@ wss.on('connection', (ws) => {
             ws.workerHandlers.clear();
         }
 
-        // Cancel any pending worker operations
         workerPool.forEach(({ worker }) => {
             if (worker.workerId === ws.workerId) {
                 worker.postMessage({ type: 'stop' });
@@ -372,15 +291,12 @@ wss.on('connection', (ws) => {
         });
     };
 
-    // Handle connection close
     ws.on('close', cleanup);
 
-    // Handle connection errors with cleanup
     ws.on('error', (error) => {
         console.error('WebSocket error:', error);
         cleanup();
         
-        // Attempt to send error message if possible
         if (ws.readyState === WebSocket.OPEN) {
             try {
                 ws.send('{"type":"error","message":"Connection error occurred"}');
@@ -390,43 +306,6 @@ wss.on('connection', (ws) => {
         }
     });
 
-    // Tag message handlers with their owner
-    workerPool.forEach(({ worker }) => {
-        const messageHandler = (message) => {
-            if (!ws.isGenerating) return;
-
-            if (message.type === 'batch') {
-                progressTracker.batchResults.set(
-                    ws.workerId,
-                    (progressTracker.batchResults.get(ws.workerId) || 0) + message.count
-                );
-                broadcastProgress();
-                
-                if (ws.isGenerating) {
-                    // Use setImmediate for better event loop handling
-                    setImmediate(() => {
-                        worker.postMessage({ type: 'generate' });
-                    });
-                }
-            } else if (message.type === 'found') {
-                ws.isGenerating = false;
-                const totalAttempts = progressTracker.batchResults.get(ws.workerId) || 0;
-                
-                ws.send(JSON.stringify({
-                    type: 'found',
-                    result: message.result,
-                    attempts: totalAttempts
-                }));
-                
-                // Cleanup
-                progressTracker.batchResults.set(ws.workerId, 0);
-            }
-        };
-        messageHandler.owner = ws;
-        worker.on('message', messageHandler);
-    });
-
-    // Send initial status
     if (ws.readyState === WebSocket.OPEN) {
         ws.send('{"type":"status","message":"Connected to server"}');
     }
