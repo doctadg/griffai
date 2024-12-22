@@ -135,11 +135,29 @@ wss.on('connection', (ws) => {
     ws.workerId = crypto.randomBytes(4).toString('hex');
     progressTracker.batchResults.set(ws.workerId, 0);
 
+    const resetWorkers = () => {
+        ws.isGenerating = false;
+        progressTracker.batchResults.set(ws.workerId, 0);
+        progressTracker.totalAttempts = 0;
+        progressTracker.lastBroadcast = 0;
+        
+        // Stop and reset all workers
+        workerPool.forEach(({ worker }) => {
+            worker.postMessage({ type: 'setPattern', pattern: '' }); // Reset pattern
+            worker.postMessage({ type: 'stop' }); // Stop current generation
+        });
+        broadcastProgress();
+    };
+
     const startGeneration = (pattern) => {
+        // First reset everything
+        resetWorkers();
+        
+        // Then start new generation
         ws.isGenerating = true;
         progressTracker.batchResults.set(ws.workerId, 0);
         progressTracker.totalAttempts = 0;
-        progressTracker.lastBroadcast = 0; // Reset broadcast timer
+        progressTracker.lastBroadcast = 0;
 
         workerPool.forEach(({ worker }) => {
             worker.postMessage({ type: 'setPattern', pattern });
@@ -150,7 +168,7 @@ wss.on('connection', (ws) => {
                 if (ws.isGenerating) {
                     worker.postMessage({ type: 'generate' });
                 }
-            }, index * 20); // Reduced stagger delay from 50ms to 20ms
+            }, index * 20);
         });
     };
 
@@ -172,7 +190,6 @@ wss.on('connection', (ws) => {
                         setImmediate(() => worker.postMessage({ type: 'generate' }));
                     }
                 } else if (message.type === 'found') {
-                    ws.isGenerating = false;
                     const totalAttempts = progressTracker.totalAttempts;
                     
                     if (ws.readyState === WebSocket.OPEN) {
@@ -183,7 +200,8 @@ wss.on('connection', (ws) => {
                         }));
                     }
                     
-                    progressTracker.batchResults.set(ws.workerId, 0);
+                    // Reset everything after finding a match
+                    resetWorkers();
                 }
             } catch (error) {
                 console.error('Worker message handler error:', error);
@@ -239,16 +257,7 @@ wss.on('connection', (ws) => {
             }
 
             if (data.type === 'stop') {
-                ws.isGenerating = false;
-                progressTracker.batchResults.set(ws.workerId, 0);
-                progressTracker.totalAttempts = 0;
-                progressTracker.lastBroadcast = 0;
-                // Stop all workers and reset their pattern
-                workerPool.forEach(({ worker }) => {
-                    worker.postMessage({ type: 'setPattern', pattern: '' }); // Reset pattern
-                    worker.postMessage({ type: 'stop' }); // Stop current generation
-                });
-                broadcastProgress();
+                resetWorkers();
             }
         } catch (error) {
             console.error('Error processing message:', error);
@@ -262,7 +271,7 @@ wss.on('connection', (ws) => {
     activeConnections.add(ws);
 
     const cleanup = () => {
-        ws.isGenerating = false;
+        resetWorkers();
         progressTracker.batchResults.delete(ws.workerId);
         activeConnections.delete(ws);
         
@@ -272,12 +281,6 @@ wss.on('connection', (ws) => {
             });
             ws.workerHandlers.clear();
         }
-
-        workerPool.forEach(({ worker }) => {
-            if (worker.workerId === ws.workerId) {
-                worker.postMessage({ type: 'stop' });
-            }
-        });
     };
 
     ws.on('close', cleanup);

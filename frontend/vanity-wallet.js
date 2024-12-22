@@ -194,8 +194,16 @@ function stopGeneration() {
     if (isConnected && ws) {
         ws.send(JSON.stringify({ type: 'stop' }));
     }
+    // Reset all UI elements
     generateBtn.disabled = false;
     stopBtn.disabled = true;
+    attemptsEl.textContent = 'Attempts: 0';
+    speedEl.textContent = 'Speed: 0 addresses/sec';
+    estimateEl.textContent = 'Estimated time: calculating...';
+    progressEl.style.width = '0%';
+    movingAverageSpeed = 0;
+    lastAttempts = 0;
+    lastUpdateTime = null;
     showStatus('Generation stopped', 'info');
 }
 
