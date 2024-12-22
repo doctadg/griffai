@@ -44,51 +44,21 @@ let currentPattern = null;
 let patternLength = 0;
 const BATCH_SIZE = 500000;
 
-// Base58 alphabet and lookup table
-const ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
-const ALPHABET_MAP = new Map(ALPHABET.split('').map((char, index) => [char, index]));
-
 // Pre-allocate buffers
 const seedBuffer = Buffer.alloc(32);
 const pubkeyBuffer = Buffer.alloc(32);
 
-// Efficient base58 encoding for prefix check
-function base58Encode(buffer) {
-    const digits = [0];
-    for (let i = 0; i < buffer.length; i++) {
-        let carry = buffer[i];
-        for (let j = 0; j < digits.length; j++) {
-            carry += digits[j] << 8;
-            digits[j] = carry % 58;
-            carry = (carry / 58) | 0;
-        }
-        while (carry > 0) {
-            digits.push(carry % 58);
-            carry = (carry / 58) | 0;
-        }
-    }
-
-    // Leading zero bytes
-    for (let i = 0; i < buffer.length && buffer[i] === 0; i++) {
-        digits.push(0);
-    }
-
-    // Convert to base58 string
-    let result = '';
-    for (let i = digits.length - 1; i >= 0; i--) {
-        result += ALPHABET[digits[i]];
-    }
+function checkPrefix(keypair) {
+    // Get the actual base58 string from the keypair's public key
+    const pubkeyString = keypair.publicKey.toBase58();
     
-    return result;
-}
-
-function checkPrefix(pubkey) {
-    const base58 = base58Encode(pubkey);
-    return base58.toLowerCase().startsWith(currentPattern);
+    // Direct string prefix comparison without case conversion
+    return pubkeyString.startsWith(currentPattern);
 }
 
 function setPattern(pattern) {
-    currentPattern = pattern.toLowerCase();
+    // Store pattern exactly as provided - no case conversion
+    currentPattern = pattern;
     patternLength = pattern.length;
 }
 
@@ -101,22 +71,21 @@ parentPort.on('message', ({ type, pattern }) => {
         let i = 0;
         
         const MINI_BATCH = 50000;
-        const keypair = Keypair.fromSeed(seedBuffer);
+        const keypair = new Keypair();
         
         while (i < BATCH_SIZE) {
             const endBatch = Math.min(i + MINI_BATCH, BATCH_SIZE);
             
             for (; i < endBatch; i++) {
-                crypto.randomFillSync(seedBuffer);
-                keypair.secretKey.set(seedBuffer);
-                pubkeyBuffer.set(keypair._keypair.publicKey);
+                // Generate a completely new keypair each time
+                const newKeypair = new Keypair();
                 
-                if (checkPrefix(pubkeyBuffer)) {
+                if (checkPrefix(newKeypair)) {
                     parentPort.postMessage({
                         type: 'found',
                         result: {
-                            publicKey: keypair.publicKey.toBase58(),
-                            secretKey: Array.from(keypair.secretKey)
+                            publicKey: newKeypair.publicKey.toBase58(),
+                            secretKey: Array.from(newKeypair.secretKey)
                         }
                     });
                     found = true;
@@ -173,6 +142,7 @@ wss.on('connection', (ws) => {
     const startGeneration = (pattern) => {
         ws.isGenerating = true;
         progressTracker.batchResults.set(ws.workerId, 0);
+        progressTracker.totalAttempts = 0;
 
         workerPool.forEach(({ worker }) => {
             worker.postMessage({ type: 'setPattern', pattern });
@@ -206,7 +176,7 @@ wss.on('connection', (ws) => {
                     }
                 } else if (message.type === 'found') {
                     ws.isGenerating = false;
-                    const totalAttempts = progressTracker.batchResults.get(ws.workerId) || 0;
+                    const totalAttempts = progressTracker.totalAttempts;
                     
                     if (ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({
