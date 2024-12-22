@@ -18,24 +18,23 @@ app.use((req, res, next) => {
 const server = http.createServer(app);
 const wss = new WebSocket.Server({
     noServer: true,
-    perMessageDeflate: {
-        zlibDeflateOptions: {
-            level: 1 // Fast compression
-        }
-    },
+    perMessageDeflate: false, // Disable compression for better stability
     maxPayload: 1024 * 16 // 16KB max message size
 });
 
-// Create worker pool at startup - use all cores minus one for the main thread
-const NUM_WORKERS = Math.max(1, os.cpus().length - 1);
+// Create worker pool at startup - use half of available cores for better stability
+const NUM_WORKERS = Math.max(1, Math.floor(os.cpus().length / 2));
 const workerPool = [];
 
 // Shared progress tracking
 const progressTracker = {
     batchResults: new Map(),
     lastBroadcast: 0,
-    BROADCAST_INTERVAL: 100 // More frequent updates
+    BROADCAST_INTERVAL: 250 // Match frontend update interval
 };
+
+// Track active connections
+const activeConnections = new Set();
 
 // Worker script as a separate string for better readability
 const workerScript = `
@@ -45,7 +44,7 @@ const crypto = require('crypto');
 
 let currentPattern = null;
 let patternLength = 0;
-const BATCH_SIZE = 50000; // Increased batch size for better throughput
+const BATCH_SIZE = 25000; // Reduced batch size for better stability
 
 // Base58 alphabet and lookup optimization
 const ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
@@ -214,39 +213,68 @@ wss.on('connection', (ws) => {
         });
     };
 
-    // Set up worker message handlers with improved batching
-    workerPool.forEach(({ worker }) => {
-        worker.on('message', (message) => {
-            if (!ws.isGenerating) return;
+    // Initialize worker message handlers
+    const workerMessageHandlers = new Map();
 
-            if (message.type === 'batch') {
-                progressTracker.batchResults.set(
-                    ws.workerId,
-                    (progressTracker.batchResults.get(ws.workerId) || 0) + message.count
-                );
-                broadcastProgress();
-                
-                if (ws.isGenerating) {
-                    // Use setImmediate for better event loop handling
-                    setImmediate(() => {
-                        worker.postMessage({ type: 'generate' });
-                    });
+    // Set up worker message handlers with improved error handling
+    workerPool.forEach(({ worker }) => {
+        const messageHandler = (message) => {
+            // Check if connection is still valid
+            if (!activeConnections.has(ws) || !ws.isGenerating) return;
+
+            try {
+                if (message.type === 'batch') {
+                    const currentAttempts = progressTracker.batchResults.get(ws.workerId) || 0;
+                    progressTracker.batchResults.set(
+                        ws.workerId,
+                        currentAttempts + message.count
+                    );
+                    
+                    // Only broadcast if connection is still active
+                    if (ws.readyState === WebSocket.OPEN) {
+                        broadcastProgress();
+                    }
+                    
+                    if (ws.isGenerating && ws.readyState === WebSocket.OPEN) {
+                        // Throttle worker messages
+                        setTimeout(() => {
+                            if (ws.isGenerating && ws.readyState === WebSocket.OPEN) {
+                                worker.postMessage({ type: 'generate' });
+                            }
+                        }, 10); // Small delay to prevent overwhelming
+                    }
+                } else if (message.type === 'found') {
+                    ws.isGenerating = false;
+                    const totalAttempts = progressTracker.batchResults.get(ws.workerId) || 0;
+                    
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({
+                            type: 'found',
+                            result: message.result,
+                            attempts: totalAttempts
+                        }));
+                    }
+                    
+                    // Cleanup
+                    progressTracker.batchResults.set(ws.workerId, 0);
                 }
-            } else if (message.type === 'found') {
+            } catch (error) {
+                console.error('Worker message handler error:', error);
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.send('{"type":"error","message":"Internal processing error"}');
+                }
                 ws.isGenerating = false;
-                const totalAttempts = progressTracker.batchResults.get(ws.workerId) || 0;
-                
-                ws.send(JSON.stringify({
-                    type: 'found',
-                    result: message.result,
-                    attempts: totalAttempts
-                }));
-                
-                // Cleanup
                 progressTracker.batchResults.set(ws.workerId, 0);
             }
-        });
+        };
+
+        messageHandler.owner = ws;
+        worker.on('message', messageHandler);
+        workerMessageHandlers.set(worker, messageHandler);
     });
+
+    // Store handlers for cleanup
+    ws.workerHandlers = workerMessageHandlers;
 
     ws.on('message', (message) => {
         try {
@@ -284,25 +312,89 @@ wss.on('connection', (ws) => {
         }
     });
 
-    // Improved cleanup on connection close
-    ws.on('close', () => {
+    // Track new connection and set up cleanup
+    activeConnections.add(ws);
+
+    // Cleanup function for connection
+    const cleanup = () => {
         ws.isGenerating = false;
         progressTracker.batchResults.delete(ws.workerId);
+        activeConnections.delete(ws);
         
-        // Clean up worker listeners
-        workerPool.forEach(({ worker }) => {
-            worker.removeAllListeners('message');
-        });
-    });
+        // Remove stored handlers
+        if (ws.workerHandlers) {
+            ws.workerHandlers.forEach((handler, worker) => {
+                worker.removeListener('message', handler);
+            });
+            ws.workerHandlers.clear();
+        }
 
-    // Handle connection errors
+        // Cancel any pending worker operations
+        workerPool.forEach(({ worker }) => {
+            if (worker.workerId === ws.workerId) {
+                worker.postMessage({ type: 'stop' });
+            }
+        });
+    };
+
+    // Handle connection close
+    ws.on('close', cleanup);
+
+    // Handle connection errors with cleanup
     ws.on('error', (error) => {
         console.error('WebSocket error:', error);
-        ws.isGenerating = false;
-        progressTracker.batchResults.delete(ws.workerId);
+        cleanup();
+        
+        // Attempt to send error message if possible
+        if (ws.readyState === WebSocket.OPEN) {
+            try {
+                ws.send('{"type":"error","message":"Connection error occurred"}');
+            } catch (e) {
+                console.error('Failed to send error message:', e);
+            }
+        }
     });
 
-    ws.send('{"type":"status","message":"Connected to server"}');
+    // Tag message handlers with their owner
+    workerPool.forEach(({ worker }) => {
+        const messageHandler = (message) => {
+            if (!ws.isGenerating) return;
+
+            if (message.type === 'batch') {
+                progressTracker.batchResults.set(
+                    ws.workerId,
+                    (progressTracker.batchResults.get(ws.workerId) || 0) + message.count
+                );
+                broadcastProgress();
+                
+                if (ws.isGenerating) {
+                    // Use setImmediate for better event loop handling
+                    setImmediate(() => {
+                        worker.postMessage({ type: 'generate' });
+                    });
+                }
+            } else if (message.type === 'found') {
+                ws.isGenerating = false;
+                const totalAttempts = progressTracker.batchResults.get(ws.workerId) || 0;
+                
+                ws.send(JSON.stringify({
+                    type: 'found',
+                    result: message.result,
+                    attempts: totalAttempts
+                }));
+                
+                // Cleanup
+                progressTracker.batchResults.set(ws.workerId, 0);
+            }
+        };
+        messageHandler.owner = ws;
+        worker.on('message', messageHandler);
+    });
+
+    // Send initial status
+    if (ws.readyState === WebSocket.OPEN) {
+        ws.send('{"type":"status","message":"Connected to server"}');
+    }
 });
 
 server.on('upgrade', (request, socket, head) => {
