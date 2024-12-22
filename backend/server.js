@@ -27,11 +27,12 @@ const wss = new WebSocket.Server({
 const NUM_WORKERS = Math.max(1, Math.floor(os.cpus().length / 2));
 const workerPool = [];
 
-// Shared progress tracking
+// Optimized progress tracking
 const progressTracker = {
     batchResults: new Map(),
     lastBroadcast: 0,
-    BROADCAST_INTERVAL: 1000 // Reduced update frequency for better performance
+    BROADCAST_INTERVAL: 2000, // Increased interval to reduce overhead
+    totalAttempts: 0 // Cache total attempts
 };
 
 // Track active connections
@@ -45,7 +46,7 @@ const crypto = require('crypto');
 
 let currentPattern = null;
 let patternLength = 0;
-const BATCH_SIZE = 100000; // Increased batch size for better performance
+const BATCH_SIZE = 500000; // Further increased batch size for maximum throughput
 
 // Base58 alphabet and lookup optimization
 const ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
@@ -61,48 +62,66 @@ const pubkeyBuffer = Buffer.alloc(32);
 const base58Cache = Buffer.alloc(45); // Max base58 length for 32 bytes
 const view = new DataView(pubkeyBuffer.buffer); // Direct view for faster reads
 
-// Ultra-optimized base58 check using direct byte comparison for common cases
-function checkPrefix(pubkey) {
-    // For 1-2 character patterns, use direct byte comparison
-    if (patternLength <= 2) {
-        const byte1 = pubkey[0];
-        if (byte1 > 127) return false; // Quick reject for high bytes
-        
-        // Most common case: 1 character
-        if (patternLength === 1) {
-            const char = ALPHABET[byte1 % 58];
-            return char.charCodeAt(0) === PATTERN_CHARS[0];
+// Pre-computed tables for base58 encoding
+const LOOKUP_TABLE = new Uint16Array(256 * 256); // 64KB table for first two bytes
+const FIRST_CHAR_TABLE = new Uint8Array(256); // First character lookup
+
+// Initialize lookup tables
+(() => {
+    // First character lookup (most common case)
+    for (let i = 0; i < 256; i++) {
+        FIRST_CHAR_TABLE[i] = ALPHABET[i % 58].charCodeAt(0);
+    }
+    
+    // Two character lookup
+    for (let b1 = 0; b1 < 256; b1++) {
+        for (let b2 = 0; b2 < 256; b2++) {
+            const value = b1 * 256 + b2;
+            const c1 = ALPHABET[Math.floor(value / 58) % 58];
+            const c2 = ALPHABET[value % 58];
+            LOOKUP_TABLE[b1 * 256 + b2] = (c1.charCodeAt(0) << 8) | c2.charCodeAt(0);
         }
-        
-        // 2 characters
-        const byte2 = pubkey[1];
-        const combined = byte1 * 256 + byte2;
-        const char1 = ALPHABET[Math.floor(combined / 58) % 58];
-        const char2 = ALPHABET[combined % 58];
-        return char1.charCodeAt(0) === PATTERN_CHARS[0] &&
-               char2.charCodeAt(0) === PATTERN_CHARS[1];
+    }
+})();
+
+// Optimized base58 check with lookup tables
+function checkPrefix(pubkey) {
+    // Optimize for single character (most common case)
+    if (patternLength === 1) {
+        return FIRST_CHAR_TABLE[pubkey[0]] === PATTERN_CHARS[0];
     }
     
-    // For longer patterns, use optimized integer math
-    const value = view.getUint32(0, true);
-    let result = '';
-    let quotient = value;
+    // Optimize for two characters
+    if (patternLength === 2) {
+        const chars = LOOKUP_TABLE[pubkey[0] * 256 + pubkey[1]];
+        return (chars >> 8) === PATTERN_CHARS[0] &&
+               (chars & 0xFF) === PATTERN_CHARS[1];
+    }
     
-    // Unrolled division for first few characters (most common)
+    // For 3+ characters, use a more efficient base58 conversion
+    // Pre-allocate buffer for better performance
+    const digits = new Uint8Array(8); // Max needed for prefix check
+    let length = 0;
+    
+    // Process first 4 bytes (enough for up to 6 base58 chars)
+    let val = (pubkey[0] * 16777216) + // 256^3
+              (pubkey[1] * 65536) +     // 256^2
+              (pubkey[2] * 256) +       // 256^1
+              pubkey[3];                // 256^0
+              
+    while (val > 0 && length < patternLength) {
+        digits[length++] = val % 58;
+        val = Math.floor(val / 58);
+    }
+    
+    // Handle leading zeros
+    while (length < patternLength) {
+        digits[length++] = 0; // '1' in base58
+    }
+    
+    // Compare pattern from right to left (natural order from division)
     for (let i = 0; i < patternLength; i++) {
-        result = ALPHABET[quotient % 58] + result;
-        quotient = Math.floor(quotient / 58);
-        if (quotient === 0) break;
-    }
-    
-    // Pad with leading '1's if needed
-    while (result.length < patternLength) {
-        result = '1' + result;
-    }
-    
-    // Compare only the required prefix
-    for (let i = 0; i < patternLength; i++) {
-        if (result.charCodeAt(i) !== PATTERN_CHARS[i]) {
+        if (ALPHABET[digits[patternLength - 1 - i]].charCodeAt(0) !== PATTERN_CHARS[i]) {
             return false;
         }
     }
@@ -127,15 +146,14 @@ parentPort.on('message', ({ type, pattern }) => {
         let found = false;
         let i = 0;
         
-        // Process in smaller chunks to avoid blocking the event loop
+        // Process in larger chunks for maximum performance
+        const MINI_BATCH = 50000; // Increased mini-batch size
+        const keypair = Keypair.fromSeed(seedBuffer); // Pre-allocate keypair
+        
         while (i < BATCH_SIZE) {
-            // Process larger batches for better performance
-            const MINI_BATCH = 10000;
             const endBatch = Math.min(i + MINI_BATCH, BATCH_SIZE);
             
-            // Pre-allocate keypair for reuse
-            const keypair = Keypair.fromSeed(seedBuffer);
-            
+            // Inner loop optimized for maximum throughput
             for (; i < endBatch; i++) {
                 crypto.randomFillSync(seedBuffer);
                 keypair.secretKey.set(seedBuffer);
@@ -156,8 +174,8 @@ parentPort.on('message', ({ type, pattern }) => {
             
             if (found) break;
             
-            // Only report progress at end of batch
-            if (i === endBatch) {
+            // Report progress less frequently
+            if (i % MINI_BATCH === 0) {
                 parentPort.postMessage({ type: 'batch', count: i });
             }
         }
@@ -178,21 +196,24 @@ for (let i = 0; i < NUM_WORKERS; i++) {
     });
 }
 
-// Broadcast progress to all connected clients
+// Optimized broadcast with cached attempts
 function broadcastProgress() {
     const now = Date.now();
     if (now - progressTracker.lastBroadcast >= progressTracker.BROADCAST_INTERVAL) {
-        let totalAttempts = 0;
-        for (const attempts of progressTracker.batchResults.values()) {
-            totalAttempts += attempts;
-        }
-
-        const message = `{"type":"progress","attempts":${totalAttempts}}`;
-        wss.clients.forEach(client => {
+        // Pre-construct message once
+        const message = `{"type":"progress","attempts":${progressTracker.totalAttempts}}`;
+        
+        // Broadcast to all clients in one pass
+        const clients = wss.clients;
+        for (const client of clients) {
             if (client.readyState === WebSocket.OPEN && client.isGenerating) {
-                client.send(message);
+                try {
+                    client.send(message);
+                } catch (e) {
+                    // Ignore send errors
+                }
             }
-        });
+        }
         progressTracker.lastBroadcast = now;
     }
 }
@@ -233,22 +254,17 @@ wss.on('connection', (ws) => {
 
             try {
                 if (message.type === 'batch') {
-                    const currentAttempts = progressTracker.batchResults.get(ws.workerId) || 0;
-                    progressTracker.batchResults.set(
-                        ws.workerId,
-                        currentAttempts + message.count
-                    );
+                    // Update total attempts directly
+                    progressTracker.totalAttempts += message.count;
                     
-                    // Only broadcast if connection is still active
+                    // Only broadcast occasionally to reduce overhead
                     if (ws.readyState === WebSocket.OPEN) {
                         broadcastProgress();
                     }
                     
+                    // Continue generation immediately if active
                     if (ws.isGenerating && ws.readyState === WebSocket.OPEN) {
-                        // Continue generation immediately if still active
-                        if (ws.isGenerating && ws.readyState === WebSocket.OPEN) {
-                            worker.postMessage({ type: 'generate' });
-                        }
+                        setImmediate(() => worker.postMessage({ type: 'generate' }));
                     }
                 } else if (message.type === 'found') {
                     ws.isGenerating = false;
