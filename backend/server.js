@@ -5,6 +5,7 @@ const { Keypair } = require('@solana/web3.js');
 const path = require('path');
 const { Worker } = require('worker_threads');
 const os = require('os');
+const crypto = require('crypto');
 
 const app = express();
 app.use(express.static(path.join(__dirname, '../frontend')));

@@ -7,7 +7,7 @@ NC='\033[0m' # No Color
 
 # Server details
 HOST="18.192.211.91"
-PORT="3000"
+PORT="80"
 
 echo "Testing connection to WebSocket server at $HOST:$PORT..."
 
@@ -27,8 +27,8 @@ echo -n "Testing WebSocket connection... "
 # Create a temporary file for the wscat output
 TMPFILE=$(mktemp)
 
-# Run wscat with verbose output
-timeout 5 wscat -c "ws://$HOST:$PORT" --verbose > "$TMPFILE" 2>&1 &
+# Run wscat connection test
+timeout 5 wscat -c "ws://$HOST:$PORT" > "$TMPFILE" 2>&1 &
 WSCAT_PID=$!
 
 # Wait a moment for the connection and show connection attempt details
