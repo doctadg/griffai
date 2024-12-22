@@ -23,13 +23,13 @@ const wss = new WebSocket.Server({
     maxPayload: 1024 * 16
 });
 
-const NUM_WORKERS = Math.max(1, Math.floor(os.cpus().length / 2));
+const NUM_WORKERS = Math.max(1, Math.floor(os.cpus().length * 0.75)); // Use 75% of CPU cores
 const workerPool = [];
 
 const progressTracker = {
     batchResults: new Map(),
     lastBroadcast: 0,
-    BROADCAST_INTERVAL: 100, // Reduced from 2000ms to 100ms for more responsive UI
+    BROADCAST_INTERVAL: 500, // Balanced between UI responsiveness and performance
     totalAttempts: 0
 };
 
@@ -42,8 +42,8 @@ const crypto = require('crypto');
 
 let currentPattern = null;
 let patternLength = 0;
-const BATCH_SIZE = 10000; // Reduced from 500000 to 10000 for more frequent updates
-const MINI_BATCH = 1000;  // Reduced from 50000 to 1000 for more frequent progress reports
+const BATCH_SIZE = 50000; // Increased for better performance
+const PROGRESS_INTERVAL = 10000; // Report progress every 10k attempts
 
 function checkPrefix(keypair) {
     const pubkeyString = keypair.publicKey.toBase58();
@@ -55,46 +55,65 @@ function setPattern(pattern) {
     patternLength = pattern.length;
 }
 
+// Pre-allocate buffer for better performance
+const keyBuffer = new Uint8Array(32);
+
+function generateAndCheckKeys(count) {
+    let attempts = 0;
+    while (attempts < count) {
+        // Generate random bytes directly into buffer
+        crypto.randomFillSync(keyBuffer);
+        const newKeypair = Keypair.fromSeed(keyBuffer);
+        
+        if (checkPrefix(newKeypair)) {
+            return {
+                found: true,
+                keypair: newKeypair,
+                attempts: attempts + 1
+            };
+        }
+        
+        attempts++;
+        
+        // Report progress at intervals
+        if (attempts % PROGRESS_INTERVAL === 0) {
+            parentPort.postMessage({ type: 'batch', count: PROGRESS_INTERVAL });
+        }
+    }
+    
+    return { found: false, attempts };
+}
+
 parentPort.on('message', ({ type, pattern }) => {
     if (type === 'setPattern') {
         setPattern(pattern);
     }
     else if (type === 'stop') {
-        // Stop generation by resetting pattern
         currentPattern = null;
         patternLength = 0;
     }
     else if (type === 'generate') {
-        let found = false;
-        let i = 0;
+        const result = generateAndCheckKeys(BATCH_SIZE);
         
-        while (i < BATCH_SIZE) {
-            const endBatch = Math.min(i + MINI_BATCH, BATCH_SIZE);
-            
-            for (; i < endBatch; i++) {
-                const newKeypair = new Keypair();
-                
-                if (checkPrefix(newKeypair)) {
-                    parentPort.postMessage({
-                        type: 'found',
-                        result: {
-                            publicKey: newKeypair.publicKey.toBase58(),
-                            secretKey: Array.from(newKeypair.secretKey)
-                        }
-                    });
-                    found = true;
-                    break;
+        if (result.found) {
+            parentPort.postMessage({
+                type: 'found',
+                result: {
+                    publicKey: result.keypair.publicKey.toBase58(),
+                    secretKey: Array.from(result.keypair.secretKey)
                 }
+            });
+        } else {
+            // Report remaining attempts not covered by progress updates
+            const remainingAttempts = result.attempts % PROGRESS_INTERVAL;
+            if (remainingAttempts > 0) {
+                parentPort.postMessage({ type: 'batch', count: remainingAttempts });
             }
             
-            if (found) break;
-            
-            // Report progress more frequently
-            parentPort.postMessage({ type: 'batch', count: MINI_BATCH });
-        }
-        
-        if (!found) {
-            parentPort.postMessage({ type: 'batch', count: BATCH_SIZE });
+            // Request next batch if not found
+            if (currentPattern) {
+                setImmediate(() => parentPort.postMessage({ type: 'generate' }));
+            }
         }
     }
 });
