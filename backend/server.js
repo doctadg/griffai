@@ -59,6 +59,11 @@ parentPort.on('message', ({ type, pattern }) => {
     if (type === 'setPattern') {
         setPattern(pattern);
     }
+    else if (type === 'stop') {
+        // Stop generation by resetting pattern
+        currentPattern = null;
+        patternLength = 0;
+    }
     else if (type === 'generate') {
         let found = false;
         let i = 0;
@@ -236,6 +241,13 @@ wss.on('connection', (ws) => {
             if (data.type === 'stop') {
                 ws.isGenerating = false;
                 progressTracker.batchResults.set(ws.workerId, 0);
+                progressTracker.totalAttempts = 0;
+                progressTracker.lastBroadcast = 0;
+                // Stop all workers and reset their pattern
+                workerPool.forEach(({ worker }) => {
+                    worker.postMessage({ type: 'setPattern', pattern: '' }); // Reset pattern
+                    worker.postMessage({ type: 'stop' }); // Stop current generation
+                });
                 broadcastProgress();
             }
         } catch (error) {
