@@ -29,7 +29,7 @@ const workerPool = [];
 const progressTracker = {
     batchResults: new Map(),
     lastBroadcast: 0,
-    BROADCAST_INTERVAL: 2000,
+    BROADCAST_INTERVAL: 100, // Reduced from 2000ms to 100ms for more responsive UI
     totalAttempts: 0
 };
 
@@ -42,22 +42,15 @@ const crypto = require('crypto');
 
 let currentPattern = null;
 let patternLength = 0;
-const BATCH_SIZE = 500000;
-
-// Pre-allocate buffers
-const seedBuffer = Buffer.alloc(32);
-const pubkeyBuffer = Buffer.alloc(32);
+const BATCH_SIZE = 10000; // Reduced from 500000 to 10000 for more frequent updates
+const MINI_BATCH = 1000;  // Reduced from 50000 to 1000 for more frequent progress reports
 
 function checkPrefix(keypair) {
-    // Get the actual base58 string from the keypair's public key
     const pubkeyString = keypair.publicKey.toBase58();
-    
-    // Direct string prefix comparison without case conversion
     return pubkeyString.startsWith(currentPattern);
 }
 
 function setPattern(pattern) {
-    // Store pattern exactly as provided - no case conversion
     currentPattern = pattern;
     patternLength = pattern.length;
 }
@@ -70,14 +63,10 @@ parentPort.on('message', ({ type, pattern }) => {
         let found = false;
         let i = 0;
         
-        const MINI_BATCH = 50000;
-        const keypair = new Keypair();
-        
         while (i < BATCH_SIZE) {
             const endBatch = Math.min(i + MINI_BATCH, BATCH_SIZE);
             
             for (; i < endBatch; i++) {
-                // Generate a completely new keypair each time
                 const newKeypair = new Keypair();
                 
                 if (checkPrefix(newKeypair)) {
@@ -95,9 +84,8 @@ parentPort.on('message', ({ type, pattern }) => {
             
             if (found) break;
             
-            if (i % MINI_BATCH === 0) {
-                parentPort.postMessage({ type: 'batch', count: i });
-            }
+            // Report progress more frequently
+            parentPort.postMessage({ type: 'batch', count: MINI_BATCH });
         }
         
         if (!found) {
@@ -118,7 +106,10 @@ for (let i = 0; i < NUM_WORKERS; i++) {
 function broadcastProgress() {
     const now = Date.now();
     if (now - progressTracker.lastBroadcast >= progressTracker.BROADCAST_INTERVAL) {
-        const message = `{"type":"progress","attempts":${progressTracker.totalAttempts}}`;
+        const message = JSON.stringify({
+            type: 'progress',
+            attempts: progressTracker.totalAttempts
+        });
         
         const clients = wss.clients;
         for (const client of clients) {
@@ -143,6 +134,7 @@ wss.on('connection', (ws) => {
         ws.isGenerating = true;
         progressTracker.batchResults.set(ws.workerId, 0);
         progressTracker.totalAttempts = 0;
+        progressTracker.lastBroadcast = 0; // Reset broadcast timer
 
         workerPool.forEach(({ worker }) => {
             worker.postMessage({ type: 'setPattern', pattern });
@@ -153,7 +145,7 @@ wss.on('connection', (ws) => {
                 if (ws.isGenerating) {
                     worker.postMessage({ type: 'generate' });
                 }
-            }, index * 50);
+            }, index * 20); // Reduced stagger delay from 50ms to 20ms
         });
     };
 
@@ -191,7 +183,10 @@ wss.on('connection', (ws) => {
             } catch (error) {
                 console.error('Worker message handler error:', error);
                 if (ws.readyState === WebSocket.OPEN) {
-                    ws.send('{"type":"error","message":"Internal processing error"}');
+                    ws.send(JSON.stringify({
+                        type: 'error',
+                        message: 'Internal processing error'
+                    }));
                 }
                 ws.isGenerating = false;
                 progressTracker.batchResults.set(ws.workerId, 0);
@@ -211,18 +206,27 @@ wss.on('connection', (ws) => {
 
             if (data.type === 'start') {
                 if (ws.isGenerating) {
-                    ws.send('{"type":"error","message":"Generation already in progress"}');
+                    ws.send(JSON.stringify({
+                        type: 'error',
+                        message: 'Generation already in progress'
+                    }));
                     return;
                 }
 
                 if (!data.pattern || typeof data.pattern !== 'string' || data.pattern.length > 6) {
-                    ws.send('{"type":"error","message":"Invalid pattern. Must be 1-6 characters."}');
+                    ws.send(JSON.stringify({
+                        type: 'error',
+                        message: 'Invalid pattern. Must be 1-6 characters.'
+                    }));
                     return;
                 }
 
                 const validChars = /^[1-9A-HJ-NP-Za-km-z]+$/;
                 if (!validChars.test(data.pattern)) {
-                    ws.send('{"type":"error","message":"Pattern contains invalid characters"}');
+                    ws.send(JSON.stringify({
+                        type: 'error',
+                        message: 'Pattern contains invalid characters'
+                    }));
                     return;
                 }
 
@@ -236,7 +240,10 @@ wss.on('connection', (ws) => {
             }
         } catch (error) {
             console.error('Error processing message:', error);
-            ws.send('{"type":"error","message":"Invalid message format"}');
+            ws.send(JSON.stringify({
+                type: 'error',
+                message: 'Invalid message format'
+            }));
         }
     });
 
@@ -269,7 +276,10 @@ wss.on('connection', (ws) => {
         
         if (ws.readyState === WebSocket.OPEN) {
             try {
-                ws.send('{"type":"error","message":"Connection error occurred"}');
+                ws.send(JSON.stringify({
+                    type: 'error',
+                    message: 'Connection error occurred'
+                }));
             } catch (e) {
                 console.error('Failed to send error message:', e);
             }
@@ -277,7 +287,10 @@ wss.on('connection', (ws) => {
     });
 
     if (ws.readyState === WebSocket.OPEN) {
-        ws.send('{"type":"status","message":"Connected to server"}');
+        ws.send(JSON.stringify({
+            type: 'status',
+            message: 'Connected to server'
+        }));
     }
 });
 
