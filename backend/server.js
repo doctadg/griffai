@@ -18,7 +18,7 @@ app.use((req, res, next) => {
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ noServer: true, perMessageDeflate: false });
 
-// Create worker pool at startup
+// Create worker pool at startup - use all cores
 const NUM_WORKERS = os.cpus().length;
 const workerPool = [];
 
@@ -30,37 +30,42 @@ const crypto = require('crypto');
 
 let currentPattern = null;
 let patternLength = 0;
-const BATCH_SIZE = 5000; // Smaller batch size for more frequent updates
+const BATCH_SIZE = 25000; // Increased batch size for better performance
 
 // Base58 alphabet for direct conversion
 const ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
-const ALPHABET_MAP = {};
+const ALPHABET_MAP = new Uint8Array(128);
 for (let i = 0; i < ALPHABET.length; i++) {
-    ALPHABET_MAP[ALPHABET[i]] = i;
+    ALPHABET_MAP[ALPHABET.charCodeAt(i)] = i;
 }
 
 // Pre-allocate buffers
 const seedBuffer = Buffer.alloc(32);
 const pubkeyBuffer = Buffer.alloc(32);
+let base58Cache = Buffer.alloc(45); // Max base58 length for 32 bytes
 
-// Fast base58 check using native Buffer
-function checkPrefix(pubkey, pattern) {
+// Optimized base58 check using lookup table and native Buffer
+function checkPrefix(pubkey) {
     let carry = 0n;
-    let digits = 0;
-    
     for (let i = 0; i < Math.min(3, pubkey.length); i++) {
         carry = (carry * 256n) + BigInt(pubkey[i]);
     }
     
-    let result = '';
-    while (carry > 0n && digits < patternLength) {
+    let j = 0;
+    while (carry > 0n && j < patternLength) {
         const remainder = Number(carry % 58n);
-        result = ALPHABET[remainder] + result;
+        base58Cache[j] = ALPHABET.charCodeAt(remainder);
         carry = carry / 58n;
-        digits++;
+        j++;
     }
     
-    return result.toLowerCase().startsWith(pattern);
+    // Direct byte comparison
+    for (let i = 0; i < patternLength; i++) {
+        if (base58Cache[patternLength - 1 - i] !== currentPattern.charCodeAt(i)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 parentPort.on('message', ({ type, pattern }) => {
@@ -69,12 +74,13 @@ parentPort.on('message', ({ type, pattern }) => {
         patternLength = pattern.length;
     }
     else if (type === 'generate') {
+        let found = false;
         for (let i = 0; i < BATCH_SIZE; i++) {
             crypto.randomFillSync(seedBuffer);
             const keypair = Keypair.fromSeed(seedBuffer);
             pubkeyBuffer.set(keypair.publicKey.toBytes());
             
-            if (checkPrefix(pubkeyBuffer, currentPattern)) {
+            if (checkPrefix(pubkeyBuffer)) {
                 parentPort.postMessage({
                     type: 'found',
                     result: {
@@ -82,10 +88,13 @@ parentPort.on('message', ({ type, pattern }) => {
                         secretKey: Array.from(keypair.secretKey)
                     }
                 });
-                return;
+                found = true;
+                break;
             }
         }
-        parentPort.postMessage({ type: 'batch', count: BATCH_SIZE });
+        if (!found) {
+            parentPort.postMessage({ type: 'batch', count: BATCH_SIZE });
+        }
     }
 });
 `;
@@ -104,7 +113,7 @@ wss.on('connection', (ws) => {
     let isGenerating = false;
     let totalAttempts = 0;
     let lastProgressUpdate = Date.now();
-    const PROGRESS_UPDATE_INTERVAL = 100; // More frequent updates
+    const PROGRESS_UPDATE_INTERVAL = 250; // Reduced update frequency for smoother UI
 
     const sendProgress = () => {
         const now = Date.now();
@@ -138,6 +147,7 @@ wss.on('connection', (ws) => {
                 totalAttempts += message.count;
                 sendProgress();
                 if (isGenerating) {
+                    // Immediately start next batch
                     worker.postMessage({ type: 'generate' });
                 }
             } else if (message.type === 'found') {

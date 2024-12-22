@@ -22,7 +22,9 @@ let lastUpdateTime = null;
 let lastAttempts = 0;
 let updateTimeout = null;
 let lastSpeedUpdate = 0;
-const SPEED_UPDATE_INTERVAL = 500; // Update speed display every 500ms
+let movingAverageSpeed = 0;
+const SPEED_UPDATE_INTERVAL = 250; // Match backend update interval
+const ALPHA = 0.3; // Exponential moving average factor
 
 // Connect to WebSocket server
 function connectWebSocket() {
@@ -56,10 +58,9 @@ function connectWebSocket() {
                 if (now - lastSpeedUpdate >= SPEED_UPDATE_INTERVAL) {
                     updateStats(data.attempts);
                     lastSpeedUpdate = now;
-                } else {
-                    // Just update attempts counter
-                    attemptsEl.textContent = `Attempts: ${data.attempts.toLocaleString()}`;
                 }
+                // Update attempts counter with pre-formatted number
+                attemptsEl.textContent = `Attempts: ${data.attempts.toLocaleString()}`;
             } else if (data.type === 'found') {
                 currentKeypair = data.result;
                 displayResult(data.result, data.attempts);
@@ -118,19 +119,27 @@ function showStatus(message, type = 'info') {
 function updateStats(attempts) {
     const now = Date.now();
     
-    // Calculate speed
+    // Calculate speed using exponential moving average
     if (lastUpdateTime) {
         const timeDiff = (now - lastUpdateTime) / 1000;
         const attemptsDiff = attempts - lastAttempts;
-        const speed = Math.round(attemptsDiff / timeDiff);
-        speedEl.textContent = `Speed: ${speed.toLocaleString()} addresses/sec`;
+        const currentSpeed = Math.round(attemptsDiff / timeDiff);
+        
+        // Update moving average
+        if (movingAverageSpeed === 0) {
+            movingAverageSpeed = currentSpeed;
+        } else {
+            movingAverageSpeed = Math.round(ALPHA * currentSpeed + (1 - ALPHA) * movingAverageSpeed);
+        }
+        
+        speedEl.textContent = `Speed: ${movingAverageSpeed.toLocaleString()} addresses/sec`;
         
         // Calculate estimate
         const pattern = patternInput.value.trim();
         const possibleChars = 36;
         const expectedAttempts = Math.pow(possibleChars, pattern.length);
         const remainingAttempts = expectedAttempts - attempts;
-        const estimatedSeconds = remainingAttempts / speed;
+        const estimatedSeconds = remainingAttempts / movingAverageSpeed;
         
         let timeEstimate;
         if (estimatedSeconds < 60) {
@@ -145,7 +154,11 @@ function updateStats(attempts) {
     
     lastUpdateTime = now;
     lastAttempts = attempts;
-    progressEl.style.width = `${(attempts % 1000) / 10}%`;
+    
+    // Update progress bar less frequently to reduce jitter
+    if (attempts % 5000 === 0) {
+        progressEl.style.width = `${(attempts % 100000) / 1000}%`;
+    }
 }
 
 function startGeneration() {
@@ -171,6 +184,7 @@ function startGeneration() {
     lastUpdateTime = startTime;
     lastAttempts = 0;
     lastSpeedUpdate = 0;
+    movingAverageSpeed = 0;
     
     showStatus(`Starting generation for pattern "${pattern}"...`, 'success');
     ws.send(JSON.stringify({ type: 'start', pattern }));
