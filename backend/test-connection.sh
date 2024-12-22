@@ -27,8 +27,8 @@ echo -n "Testing WebSocket connection... "
 # Create a temporary file for the wscat output
 TMPFILE=$(mktemp)
 
-# Run wscat connection test
-timeout 5 wscat -c "ws://$HOST:$PORT" > "$TMPFILE" 2>&1 &
+# Run wscat connection test with debug output
+timeout 5 wscat -c "ws://$HOST:$PORT" --no-color > "$TMPFILE" 2>&1 &
 WSCAT_PID=$!
 
 # Wait a moment for the connection and show connection attempt details

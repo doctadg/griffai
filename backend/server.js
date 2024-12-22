@@ -31,7 +31,7 @@ const workerPool = [];
 const progressTracker = {
     batchResults: new Map(),
     lastBroadcast: 0,
-    BROADCAST_INTERVAL: 250 // Match frontend update interval
+    BROADCAST_INTERVAL: 1000 // Reduced update frequency for better performance
 };
 
 // Track active connections
@@ -45,7 +45,7 @@ const crypto = require('crypto');
 
 let currentPattern = null;
 let patternLength = 0;
-const BATCH_SIZE = 25000; // Reduced batch size for better stability
+const BATCH_SIZE = 100000; // Increased batch size for better performance
 
 // Base58 alphabet and lookup optimization
 const ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
@@ -61,41 +61,48 @@ const pubkeyBuffer = Buffer.alloc(32);
 const base58Cache = Buffer.alloc(45); // Max base58 length for 32 bytes
 const view = new DataView(pubkeyBuffer.buffer); // Direct view for faster reads
 
-// Optimized base58 check using lookup table and DataView for faster reads
+// Ultra-optimized base58 check using direct byte comparison for common cases
 function checkPrefix(pubkey) {
-    // Read first 4 bytes as a 32-bit integer for faster processing
-    const firstWord = view.getUint32(0, true); // true for little-endian
-    let carry = BigInt(firstWord);
-    
-    // Only process more bytes if needed based on pattern length
-    if (patternLength > 4) {
-        carry = (carry << 8n) + BigInt(pubkey[4]);
-        if (patternLength > 5) {
-            carry = (carry << 8n) + BigInt(pubkey[5]);
-        }
-    }
-    
-    // Unrolled base58 conversion for first few characters (most common case)
-    let j = 0;
-    const firstChar = Number(carry % 58n);
-    base58Cache[j++] = ALPHABET.charCodeAt(firstChar);
-    carry = carry / 58n;
-    
-    if (carry > 0n) {
-        const secondChar = Number(carry % 58n);
-        base58Cache[j++] = ALPHABET.charCodeAt(secondChar);
-        carry = carry / 58n;
+    // For 1-2 character patterns, use direct byte comparison
+    if (patternLength <= 2) {
+        const byte1 = pubkey[0];
+        if (byte1 > 127) return false; // Quick reject for high bytes
         
-        while (carry > 0n && j < patternLength) {
-            const nextChar = Number(carry % 58n);
-            base58Cache[j++] = ALPHABET.charCodeAt(nextChar);
-            carry = carry / 58n;
+        // Most common case: 1 character
+        if (patternLength === 1) {
+            const char = ALPHABET[byte1 % 58];
+            return char.charCodeAt(0) === PATTERN_CHARS[0];
         }
+        
+        // 2 characters
+        const byte2 = pubkey[1];
+        const combined = byte1 * 256 + byte2;
+        const char1 = ALPHABET[Math.floor(combined / 58) % 58];
+        const char2 = ALPHABET[combined % 58];
+        return char1.charCodeAt(0) === PATTERN_CHARS[0] &&
+               char2.charCodeAt(0) === PATTERN_CHARS[1];
     }
     
-    // Direct byte comparison with early exit
+    // For longer patterns, use optimized integer math
+    const value = view.getUint32(0, true);
+    let result = '';
+    let quotient = value;
+    
+    // Unrolled division for first few characters (most common)
     for (let i = 0; i < patternLength; i++) {
-        if (base58Cache[patternLength - 1 - i] !== PATTERN_CHARS[i]) {
+        result = ALPHABET[quotient % 58] + result;
+        quotient = Math.floor(quotient / 58);
+        if (quotient === 0) break;
+    }
+    
+    // Pad with leading '1's if needed
+    while (result.length < patternLength) {
+        result = '1' + result;
+    }
+    
+    // Compare only the required prefix
+    for (let i = 0; i < patternLength; i++) {
+        if (result.charCodeAt(i) !== PATTERN_CHARS[i]) {
             return false;
         }
     }
@@ -122,14 +129,17 @@ parentPort.on('message', ({ type, pattern }) => {
         
         // Process in smaller chunks to avoid blocking the event loop
         while (i < BATCH_SIZE) {
-            // Process mini-batch of addresses
-            const MINI_BATCH = 1000;
+            // Process larger batches for better performance
+            const MINI_BATCH = 10000;
             const endBatch = Math.min(i + MINI_BATCH, BATCH_SIZE);
+            
+            // Pre-allocate keypair for reuse
+            const keypair = Keypair.fromSeed(seedBuffer);
             
             for (; i < endBatch; i++) {
                 crypto.randomFillSync(seedBuffer);
-                const keypair = Keypair.fromSeed(seedBuffer);
-                pubkeyBuffer.set(keypair.publicKey.toBytes());
+                keypair.secretKey.set(seedBuffer);
+                pubkeyBuffer.set(keypair._keypair.publicKey);
                 
                 if (checkPrefix(pubkeyBuffer)) {
                     parentPort.postMessage({
@@ -146,11 +156,9 @@ parentPort.on('message', ({ type, pattern }) => {
             
             if (found) break;
             
-            // Allow event loop to process other messages
-            if (i < BATCH_SIZE) {
-                setImmediate(() => {
-                    parentPort.postMessage({ type: 'batch', count: i });
-                });
+            // Only report progress at end of batch
+            if (i === endBatch) {
+                parentPort.postMessage({ type: 'batch', count: i });
             }
         }
         
@@ -237,12 +245,10 @@ wss.on('connection', (ws) => {
                     }
                     
                     if (ws.isGenerating && ws.readyState === WebSocket.OPEN) {
-                        // Throttle worker messages
-                        setTimeout(() => {
-                            if (ws.isGenerating && ws.readyState === WebSocket.OPEN) {
-                                worker.postMessage({ type: 'generate' });
-                            }
-                        }, 10); // Small delay to prevent overwhelming
+                        // Continue generation immediately if still active
+                        if (ws.isGenerating && ws.readyState === WebSocket.OPEN) {
+                            worker.postMessage({ type: 'generate' });
+                        }
                     }
                 } else if (message.type === 'found') {
                     ws.isGenerating = false;
