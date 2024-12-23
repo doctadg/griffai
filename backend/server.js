@@ -28,7 +28,8 @@ function killProcess(ws) {
     const process = activeProcesses.get(ws);
     if (process) {
         try {
-            process.kill();
+            process.kill('SIGTERM');
+            console.log('Process killed successfully');
         } catch (error) {
             console.error('Error killing process:', error);
         }
@@ -44,9 +45,11 @@ wss.on('connection', (ws) => {
     const BROADCAST_INTERVAL = 1000;
 
     const cleanup = () => {
-        killProcess(ws);
-        ws.isGenerating = false;
-        activeConnections.delete(ws);
+        if (ws.isGenerating) {
+            killProcess(ws);
+            ws.isGenerating = false;
+            activeConnections.delete(ws);
+        }
     };
 
     const startGeneration = (pattern) => {
@@ -61,12 +64,16 @@ wss.on('connection', (ws) => {
         attempts = 0;
         ws.isGenerating = true;
 
+        console.log('Starting solana-keygen grind process for pattern:', pattern);
+
         // Start solana-keygen grind process
         const process = spawn('solana-keygen', ['grind', '--starts-with', pattern + ':1']);
         activeProcesses.set(ws, process);
 
         process.stdout.on('data', (data) => {
             const output = data.toString();
+            console.log('Process stdout:', output);
+
             if (output.includes('Found matching key')) {
                 // Extract pubkey and private key from output
                 const lines = output.split('\n');
@@ -93,13 +100,14 @@ wss.on('connection', (ws) => {
                     }));
                 }
 
-                killProcess(ws);
-                ws.isGenerating = false;
+                cleanup();
             }
         });
 
         process.stderr.on('data', (data) => {
             const output = data.toString();
+            console.log('Process stderr:', output);
+
             // Extract attempt count from stderr output
             const match = output.match(/Searched (\d+) keys/);
             if (match) {
@@ -107,7 +115,7 @@ wss.on('connection', (ws) => {
                 attempts = currentAttempts;
 
                 const now = Date.now();
-                if (now - lastBroadcast >= BROADCAST_INTERVAL) {
+                if (now - lastBroadcast >= BROADCAST_INTERVAL && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({
                         type: 'progress',
                         attempts: attempts
@@ -119,22 +127,35 @@ wss.on('connection', (ws) => {
 
         process.on('error', (error) => {
             console.error('Process error:', error);
-            ws.send(JSON.stringify({
-                type: 'error',
-                message: 'Failed to start key generation process'
-            }));
-            cleanup();
-        });
-
-        process.on('exit', (code) => {
-            if (code !== 0 && ws.isGenerating) {
+            if (ws.isGenerating && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({
                     type: 'error',
-                    message: 'Key generation process terminated unexpectedly'
+                    message: 'Failed to start key generation process: ' + error.message
                 }));
+                cleanup();
             }
-            cleanup();
         });
+
+        process.on('exit', (code, signal) => {
+            console.log('Process exited with code:', code, 'signal:', signal);
+            
+            // Only show error if it's an unexpected termination
+            if (code !== 0 && ws.isGenerating && !process.killed && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'error',
+                    message: `Key generation process terminated unexpectedly (code: ${code}, signal: ${signal})`
+                }));
+                cleanup();
+            }
+        });
+
+        // Send initial status
+        if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+                type: 'status',
+                message: `Starting generation for pattern "${pattern}"`
+            }));
+        }
     };
 
     ws.on('message', (message) => {
@@ -163,19 +184,22 @@ wss.on('connection', (ws) => {
             }
 
             if (data.type === 'stop') {
-                killProcess(ws);
-                ws.isGenerating = false;
-                ws.send(JSON.stringify({
-                    type: 'status',
-                    message: 'Generation stopped'
-                }));
+                cleanup();
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        type: 'status',
+                        message: 'Generation stopped'
+                    }));
+                }
             }
         } catch (error) {
             console.error('Error processing message:', error);
-            ws.send(JSON.stringify({
-                type: 'error',
-                message: 'Invalid message format'
-            }));
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'error',
+                    message: 'Invalid message format'
+                }));
+            }
         }
     });
 
@@ -185,6 +209,17 @@ wss.on('connection', (ws) => {
     ws.on('error', (error) => {
         console.error('WebSocket error:', error);
         cleanup();
+        
+        if (ws.readyState === WebSocket.OPEN) {
+            try {
+                ws.send(JSON.stringify({
+                    type: 'error',
+                    message: 'Connection error occurred'
+                }));
+            } catch (e) {
+                console.error('Failed to send error message:', e);
+            }
+        }
     });
 
     if (ws.readyState === WebSocket.OPEN) {
