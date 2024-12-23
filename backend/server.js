@@ -23,14 +23,15 @@ const wss = new WebSocket.Server({
     maxPayload: 1024 * 16
 });
 
-const NUM_WORKERS = Math.max(1, Math.floor(os.cpus().length * 0.75)); // Use 75% of CPU cores
+const NUM_WORKERS = Math.max(1, os.cpus().length - 1); // Use all cores except one for system
 const workerPool = [];
 
 const progressTracker = {
     batchResults: new Map(),
     lastBroadcast: 0,
-    BROADCAST_INTERVAL: 500, // Balanced between UI responsiveness and performance
-    totalAttempts: 0
+    BROADCAST_INTERVAL: 1000, // Increased to reduce WebSocket overhead
+    totalAttempts: 0,
+    pendingAttempts: 0
 };
 
 const activeConnections = new Set();
@@ -38,47 +39,68 @@ const activeConnections = new Set();
 const workerScript = `
 const { parentPort } = require('worker_threads');
 const { Keypair } = require('@solana/web3.js');
+const { bs58 } = require('@solana/web3.js');
 const crypto = require('crypto');
 
 let currentPattern = null;
 let patternLength = 0;
-const BATCH_SIZE = 50000; // Increased for better performance
-const PROGRESS_INTERVAL = 10000; // Report progress every 10k attempts
+let targetPrefix = null;
+const BATCH_SIZE = 100000; // Increased batch size
+const PROGRESS_INTERVAL = 25000; // Reduced progress reporting frequency
+const NUM_BUFFERS = 8; // Process multiple keys in parallel
 
-function checkPrefix(keypair) {
-    const pubkeyString = keypair.publicKey.toBase58();
-    return pubkeyString.startsWith(currentPattern);
-}
+// Pre-allocate multiple buffers for parallel processing
+const keyBuffers = Array(NUM_BUFFERS).fill(null).map(() => new Uint8Array(32));
+const pubkeyBuffers = Array(NUM_BUFFERS).fill(null).map(() => new Uint8Array(32));
 
 function setPattern(pattern) {
     currentPattern = pattern;
     patternLength = pattern.length;
+    // Convert base58 pattern to byte prefix for direct comparison
+    targetPrefix = bs58.decode(pattern);
 }
 
-// Pre-allocate buffer for better performance
-const keyBuffer = new Uint8Array(32);
+function checkPrefixBytes(pubkeyBuffer, targetPrefix) {
+    // Compare raw bytes instead of converting to base58
+    for (let i = 0; i < targetPrefix.length; i++) {
+        if (pubkeyBuffer[i] !== targetPrefix[i]) return false;
+    }
+    return true;
+}
 
 function generateAndCheckKeys(count) {
     let attempts = 0;
+    let progressCounter = 0;
+    
     while (attempts < count) {
-        // Generate random bytes directly into buffer
-        crypto.randomFillSync(keyBuffer);
-        const newKeypair = Keypair.fromSeed(keyBuffer);
-        
-        if (checkPrefix(newKeypair)) {
-            return {
-                found: true,
-                keypair: newKeypair,
-                attempts: attempts + 1
-            };
+        // Generate multiple keys in parallel
+        for (let i = 0; i < NUM_BUFFERS && attempts < count; i++) {
+            crypto.randomFillSync(keyBuffers[i]);
+            const keypair = Keypair.fromSeed(keyBuffers[i]);
+            keypair.publicKey.toBuffer().copy(pubkeyBuffers[i]);
+            
+            if (checkPrefixBytes(pubkeyBuffers[i], targetPrefix)) {
+                return {
+                    found: true,
+                    keypair,
+                    attempts: attempts + 1
+                };
+            }
+            
+            attempts++;
+            progressCounter++;
         }
         
-        attempts++;
-        
-        // Report progress at intervals
-        if (attempts % PROGRESS_INTERVAL === 0) {
-            parentPort.postMessage({ type: 'batch', count: PROGRESS_INTERVAL });
+        // Batch progress updates to reduce IPC overhead
+        if (progressCounter >= PROGRESS_INTERVAL) {
+            parentPort.postMessage({ type: 'batch', count: progressCounter });
+            progressCounter = 0;
         }
+    }
+    
+    // Report any remaining progress
+    if (progressCounter > 0) {
+        parentPort.postMessage({ type: 'batch', count: progressCounter });
     }
     
     return { found: false, attempts };
@@ -129,14 +151,16 @@ for (let i = 0; i < NUM_WORKERS; i++) {
 
 function broadcastProgress() {
     const now = Date.now();
+    if (progressTracker.pendingAttempts === 0) return;
+    
     if (now - progressTracker.lastBroadcast >= progressTracker.BROADCAST_INTERVAL) {
         const message = JSON.stringify({
             type: 'progress',
             attempts: progressTracker.totalAttempts
         });
         
-        const clients = wss.clients;
-        for (const client of clients) {
+        // Use Set.prototype.forEach for better performance with large sets of clients
+        wss.clients.forEach(client => {
             if (client.readyState === WebSocket.OPEN && client.isGenerating) {
                 try {
                     client.send(message);
@@ -144,8 +168,10 @@ function broadcastProgress() {
                     // Ignore send errors
                 }
             }
-        }
+        });
+        
         progressTracker.lastBroadcast = now;
+        progressTracker.pendingAttempts = 0;
     }
 }
 
@@ -199,14 +225,19 @@ wss.on('connection', (ws) => {
 
             try {
                 if (message.type === 'batch') {
+                    progressTracker.pendingAttempts += message.count;
                     progressTracker.totalAttempts += message.count;
                     
-                    if (ws.readyState === WebSocket.OPEN) {
-                        broadcastProgress();
+                    const now = Date.now();
+                    if (now - progressTracker.lastBroadcast >= progressTracker.BROADCAST_INTERVAL) {
+                        if (ws.readyState === WebSocket.OPEN) {
+                            broadcastProgress();
+                        }
+                        progressTracker.pendingAttempts = 0;
                     }
                     
                     if (ws.isGenerating && ws.readyState === WebSocket.OPEN) {
-                        setImmediate(() => worker.postMessage({ type: 'generate' }));
+                        worker.postMessage({ type: 'generate' });
                     }
                 } else if (message.type === 'found') {
                     const totalAttempts = progressTracker.totalAttempts;
