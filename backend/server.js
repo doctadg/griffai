@@ -43,8 +43,8 @@ const crypto = require('crypto');
 
 let currentPattern = null;
 let patternLength = 0;
-const BATCH_SIZE = 100000; // Increased batch size
-const PROGRESS_INTERVAL = 25000; // Reduced progress reporting frequency
+const BATCH_SIZE = 10000; // Smaller batch size for smoother updates
+const PROGRESS_INTERVAL = 5000; // More frequent progress updates
 const NUM_BUFFERS = 8; // Process multiple keys in parallel
 
 // Pre-allocate multiple buffers for parallel processing
