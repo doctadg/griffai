@@ -39,12 +39,10 @@ const activeConnections = new Set();
 const workerScript = `
 const { parentPort } = require('worker_threads');
 const { Keypair } = require('@solana/web3.js');
-const { bs58 } = require('@solana/web3.js');
 const crypto = require('crypto');
 
 let currentPattern = null;
 let patternLength = 0;
-let targetPrefix = null;
 const BATCH_SIZE = 100000; // Increased batch size
 const PROGRESS_INTERVAL = 25000; // Reduced progress reporting frequency
 const NUM_BUFFERS = 8; // Process multiple keys in parallel
@@ -56,16 +54,6 @@ const pubkeyBuffers = Array(NUM_BUFFERS).fill(null).map(() => new Uint8Array(32)
 function setPattern(pattern) {
     currentPattern = pattern;
     patternLength = pattern.length;
-    // Convert base58 pattern to byte prefix for direct comparison
-    targetPrefix = bs58.decode(pattern);
-}
-
-function checkPrefixBytes(pubkeyBuffer, targetPrefix) {
-    // Compare raw bytes instead of converting to base58
-    for (let i = 0; i < targetPrefix.length; i++) {
-        if (pubkeyBuffer[i] !== targetPrefix[i]) return false;
-    }
-    return true;
 }
 
 function generateAndCheckKeys(count) {
@@ -77,9 +65,8 @@ function generateAndCheckKeys(count) {
         for (let i = 0; i < NUM_BUFFERS && attempts < count; i++) {
             crypto.randomFillSync(keyBuffers[i]);
             const keypair = Keypair.fromSeed(keyBuffers[i]);
-            keypair.publicKey.toBuffer().copy(pubkeyBuffers[i]);
             
-            if (checkPrefixBytes(pubkeyBuffers[i], targetPrefix)) {
+            if (keypair.publicKey.toBase58().startsWith(currentPattern)) {
                 return {
                     found: true,
                     keypair,
