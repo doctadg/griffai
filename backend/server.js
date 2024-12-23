@@ -1,10 +1,8 @@
 const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
-const { Keypair } = require('@solana/web3.js');
 const path = require('path');
-const { Worker } = require('worker_threads');
-const os = require('os');
+const { spawn } = require('child_process');
 const crypto = require('crypto');
 
 const app = express();
@@ -23,256 +21,127 @@ const wss = new WebSocket.Server({
     maxPayload: 1024 * 16
 });
 
-const NUM_WORKERS = Math.max(1, os.cpus().length - 1); // Use all cores except one for system
-const workerPool = [];
-
-const progressTracker = {
-    batchResults: new Map(),
-    lastBroadcast: 0,
-    BROADCAST_INTERVAL: 1000, // Increased to reduce WebSocket overhead
-    totalAttempts: 0,
-    pendingAttempts: 0
-};
-
 const activeConnections = new Set();
+const activeProcesses = new Map();
 
-const workerScript = `
-const { parentPort } = require('worker_threads');
-const { Keypair } = require('@solana/web3.js');
-const crypto = require('crypto');
-
-let currentPattern = null;
-let patternLength = 0;
-const BATCH_SIZE = 10000; // Smaller batch size for smoother updates
-const PROGRESS_INTERVAL = 5000; // More frequent progress updates
-const NUM_BUFFERS = 8; // Process multiple keys in parallel
-
-// Pre-allocate multiple buffers for parallel processing
-const keyBuffers = Array(NUM_BUFFERS).fill(null).map(() => new Uint8Array(32));
-const pubkeyBuffers = Array(NUM_BUFFERS).fill(null).map(() => new Uint8Array(32));
-
-function setPattern(pattern) {
-    currentPattern = pattern;
-    patternLength = pattern.length;
-}
-
-function generateAndCheckKeys(count) {
-    let attempts = 0;
-    let progressCounter = 0;
-    
-    while (attempts < count) {
-        // Generate multiple keys in parallel
-        for (let i = 0; i < NUM_BUFFERS && attempts < count; i++) {
-            crypto.randomFillSync(keyBuffers[i]);
-            const keypair = Keypair.fromSeed(keyBuffers[i]);
-            
-            if (keypair.publicKey.toBase58().startsWith(currentPattern)) {
-                return {
-                    found: true,
-                    keypair,
-                    attempts: attempts + 1
-                };
-            }
-            
-            attempts++;
-            progressCounter++;
+function killProcess(ws) {
+    const process = activeProcesses.get(ws);
+    if (process) {
+        try {
+            process.kill();
+        } catch (error) {
+            console.error('Error killing process:', error);
         }
-        
-        // Batch progress updates to reduce IPC overhead
-        if (progressCounter >= PROGRESS_INTERVAL) {
-            parentPort.postMessage({ type: 'batch', count: progressCounter });
-            progressCounter = 0;
-        }
-    }
-    
-    // Report any remaining progress
-    if (progressCounter > 0) {
-        parentPort.postMessage({ type: 'batch', count: progressCounter });
-    }
-    
-    return { found: false, attempts };
-}
-
-parentPort.on('message', ({ type, pattern }) => {
-    if (type === 'setPattern') {
-        setPattern(pattern);
-    }
-    else if (type === 'stop') {
-        currentPattern = null;
-        patternLength = 0;
-    }
-    else if (type === 'generate') {
-        const result = generateAndCheckKeys(BATCH_SIZE);
-        
-        if (result.found) {
-            parentPort.postMessage({
-                type: 'found',
-                result: {
-                    publicKey: result.keypair.publicKey.toBase58(),
-                    secretKey: Array.from(result.keypair.secretKey)
-                }
-            });
-        } else {
-            // Report remaining attempts not covered by progress updates
-            const remainingAttempts = result.attempts % PROGRESS_INTERVAL;
-            if (remainingAttempts > 0) {
-                parentPort.postMessage({ type: 'batch', count: remainingAttempts });
-            }
-            
-            // Request next batch if not found
-            if (currentPattern) {
-                setImmediate(() => parentPort.postMessage({ type: 'generate' }));
-            }
-        }
-    }
-});
-`;
-
-for (let i = 0; i < NUM_WORKERS; i++) {
-    const worker = new Worker(workerScript, { eval: true });
-    workerPool.push({
-        worker,
-        busy: false
-    });
-}
-
-function broadcastProgress() {
-    const now = Date.now();
-    if (progressTracker.pendingAttempts === 0) return;
-    
-    if (now - progressTracker.lastBroadcast >= progressTracker.BROADCAST_INTERVAL) {
-        const message = JSON.stringify({
-            type: 'progress',
-            attempts: progressTracker.totalAttempts
-        });
-        
-        // Use Set.prototype.forEach for better performance with large sets of clients
-        wss.clients.forEach(client => {
-            if (client.readyState === WebSocket.OPEN && client.isGenerating) {
-                try {
-                    client.send(message);
-                } catch (e) {
-                    // Ignore send errors
-                }
-            }
-        });
-        
-        progressTracker.lastBroadcast = now;
-        progressTracker.pendingAttempts = 0;
+        activeProcesses.delete(ws);
     }
 }
 
 wss.on('connection', (ws) => {
     ws.isGenerating = false;
     ws.workerId = crypto.randomBytes(4).toString('hex');
-    progressTracker.batchResults.set(ws.workerId, 0);
+    let attempts = 0;
+    let lastBroadcast = 0;
+    const BROADCAST_INTERVAL = 1000;
 
-    const resetWorkers = () => {
+    const cleanup = () => {
+        killProcess(ws);
         ws.isGenerating = false;
-        progressTracker.batchResults.set(ws.workerId, 0);
-        progressTracker.totalAttempts = 0;
-        progressTracker.lastBroadcast = 0;
-        
-        // Stop and reset all workers
-        workerPool.forEach(({ worker }) => {
-            worker.postMessage({ type: 'setPattern', pattern: '' }); // Reset pattern
-            worker.postMessage({ type: 'stop' }); // Stop current generation
-        });
-        broadcastProgress();
+        activeConnections.delete(ws);
     };
 
     const startGeneration = (pattern) => {
-        // First reset everything
-        resetWorkers();
-        
-        // Then start new generation
+        if (ws.isGenerating) {
+            ws.send(JSON.stringify({
+                type: 'error',
+                message: 'Generation already in progress'
+            }));
+            return;
+        }
+
+        attempts = 0;
         ws.isGenerating = true;
-        progressTracker.batchResults.set(ws.workerId, 0);
-        progressTracker.totalAttempts = 0;
-        progressTracker.lastBroadcast = 0;
 
-        workerPool.forEach(({ worker }) => {
-            worker.postMessage({ type: 'setPattern', pattern });
-        });
+        // Start solana-keygen grind process
+        const process = spawn('solana-keygen', ['grind', '--starts-with', pattern + ':1']);
+        activeProcesses.set(ws, process);
 
-        workerPool.forEach(({ worker }, index) => {
-            setTimeout(() => {
-                if (ws.isGenerating) {
-                    worker.postMessage({ type: 'generate' });
+        process.stdout.on('data', (data) => {
+            const output = data.toString();
+            if (output.includes('Found matching key')) {
+                // Extract pubkey and private key from output
+                const lines = output.split('\n');
+                let pubkey = '';
+                let privkey = '';
+
+                for (const line of lines) {
+                    if (line.includes('pubkey:')) {
+                        pubkey = line.split('pubkey:')[1].trim();
+                    } else if (line.includes('[')) {
+                        // Private key is usually in array format
+                        privkey = line.trim();
+                    }
                 }
-            }, index * 20);
-        });
-    };
 
-    const workerMessageHandlers = new Map();
-
-    workerPool.forEach(({ worker }) => {
-        const messageHandler = (message) => {
-            if (!activeConnections.has(ws) || !ws.isGenerating) return;
-
-            try {
-                if (message.type === 'batch') {
-                    progressTracker.pendingAttempts += message.count;
-                    progressTracker.totalAttempts += message.count;
-                    
-                    const now = Date.now();
-                    if (now - progressTracker.lastBroadcast >= progressTracker.BROADCAST_INTERVAL) {
-                        if (ws.readyState === WebSocket.OPEN) {
-                            broadcastProgress();
-                        }
-                        progressTracker.pendingAttempts = 0;
-                    }
-                    
-                    if (ws.isGenerating && ws.readyState === WebSocket.OPEN) {
-                        worker.postMessage({ type: 'generate' });
-                    }
-                } else if (message.type === 'found') {
-                    const totalAttempts = progressTracker.totalAttempts;
-                    
-                    if (ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({
-                            type: 'found',
-                            result: message.result,
-                            attempts: totalAttempts
-                        }));
-                    }
-                    
-                    // Reset everything after finding a match
-                    resetWorkers();
-                }
-            } catch (error) {
-                console.error('Worker message handler error:', error);
-                if (ws.readyState === WebSocket.OPEN) {
+                if (pubkey && privkey) {
                     ws.send(JSON.stringify({
-                        type: 'error',
-                        message: 'Internal processing error'
+                        type: 'found',
+                        result: {
+                            publicKey: pubkey,
+                            secretKey: JSON.parse(privkey)
+                        },
+                        attempts: attempts
                     }));
                 }
+
+                killProcess(ws);
                 ws.isGenerating = false;
-                progressTracker.batchResults.set(ws.workerId, 0);
             }
-        };
+        });
 
-        messageHandler.owner = ws;
-        worker.on('message', messageHandler);
-        workerMessageHandlers.set(worker, messageHandler);
-    });
+        process.stderr.on('data', (data) => {
+            const output = data.toString();
+            // Extract attempt count from stderr output
+            const match = output.match(/Searched (\d+) keys/);
+            if (match) {
+                const currentAttempts = parseInt(match[1]);
+                attempts = currentAttempts;
 
-    ws.workerHandlers = workerMessageHandlers;
+                const now = Date.now();
+                if (now - lastBroadcast >= BROADCAST_INTERVAL) {
+                    ws.send(JSON.stringify({
+                        type: 'progress',
+                        attempts: attempts
+                    }));
+                    lastBroadcast = now;
+                }
+            }
+        });
+
+        process.on('error', (error) => {
+            console.error('Process error:', error);
+            ws.send(JSON.stringify({
+                type: 'error',
+                message: 'Failed to start key generation process'
+            }));
+            cleanup();
+        });
+
+        process.on('exit', (code) => {
+            if (code !== 0 && ws.isGenerating) {
+                ws.send(JSON.stringify({
+                    type: 'error',
+                    message: 'Key generation process terminated unexpectedly'
+                }));
+            }
+            cleanup();
+        });
+    };
 
     ws.on('message', (message) => {
         try {
             const data = JSON.parse(message);
 
             if (data.type === 'start') {
-                if (ws.isGenerating) {
-                    ws.send(JSON.stringify({
-                        type: 'error',
-                        message: 'Generation already in progress'
-                    }));
-                    return;
-                }
-
                 if (!data.pattern || typeof data.pattern !== 'string' || data.pattern.length > 6) {
                     ws.send(JSON.stringify({
                         type: 'error',
@@ -294,7 +163,12 @@ wss.on('connection', (ws) => {
             }
 
             if (data.type === 'stop') {
-                resetWorkers();
+                killProcess(ws);
+                ws.isGenerating = false;
+                ws.send(JSON.stringify({
+                    type: 'status',
+                    message: 'Generation stopped'
+                }));
             }
         } catch (error) {
             console.error('Error processing message:', error);
@@ -307,35 +181,10 @@ wss.on('connection', (ws) => {
 
     activeConnections.add(ws);
 
-    const cleanup = () => {
-        resetWorkers();
-        progressTracker.batchResults.delete(ws.workerId);
-        activeConnections.delete(ws);
-        
-        if (ws.workerHandlers) {
-            ws.workerHandlers.forEach((handler, worker) => {
-                worker.removeListener('message', handler);
-            });
-            ws.workerHandlers.clear();
-        }
-    };
-
     ws.on('close', cleanup);
-
     ws.on('error', (error) => {
         console.error('WebSocket error:', error);
         cleanup();
-        
-        if (ws.readyState === WebSocket.OPEN) {
-            try {
-                ws.send(JSON.stringify({
-                    type: 'error',
-                    message: 'Connection error occurred'
-                }));
-            } catch (e) {
-                console.error('Failed to send error message:', e);
-            }
-        }
     });
 
     if (ws.readyState === WebSocket.OPEN) {

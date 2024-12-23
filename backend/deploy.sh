@@ -1,5 +1,12 @@
 #!/bin/bash
 
+# Install Solana CLI tools if not already installed
+if ! command -v solana &> /dev/null; then
+    echo "Installing Solana CLI tools..."
+    sh -c "$(curl -sSfL https://release.solana.com/stable/install)"
+    export PATH="/root/.local/share/solana/install/active_release/bin:$PATH"
+fi
+
 # Install dependencies
 npm install
 
